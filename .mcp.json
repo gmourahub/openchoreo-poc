@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "openchoreo-cp": {
+      "type": "http",
+      "url": "http://api.openchoreo.localhost:8080/mcp",
+      "headersHelper": "bash ./local/mcp-auth-header.sh"
+    },
+    "openchoreo-obs": {
+      "type": "http",
+      "url": "http://observer.openchoreo.localhost:11080/mcp",
+      "headersHelper": "bash ./local/mcp-auth-header.sh"
+    }
+  }
+}

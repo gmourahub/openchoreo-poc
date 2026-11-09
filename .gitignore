@@ -1,0 +1,14 @@
+# Upstream OpenChoreo clone (github.com/openchoreo/openchoreo, tag v1.3.3) — has its own git repo
+src/
+
+# Local-only Claude Code state
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+
+# Logs and stray files from shell redirects
+*.log
+(3
+
+# Dependencies
+node_modules/
+__pycache__/
