@@ -1,0 +1,106 @@
+# Platform-owned ResourceType: an S3 bucket on the AWS endpoint the platform
+# points at (Floci locally). A Job creates the bucket idempotently on the data
+# plane; consumers get its name, endpoint and credentials as outputs.
+#
+# Local-only shortcuts: static test credentials and a Job instead of a real
+# provisioner. On real AWS these would be ACK/Crossplane plus IRSA/Pod Identity.
+apiVersion: openchoreo.dev/v1alpha1
+kind: ClusterResourceType
+metadata:
+  name: aws-s3-bucket
+  annotations:
+    openchoreo.dev/display-name: AWS S3 Bucket
+    openchoreo.dev/description: >-
+      S3 bucket provisioned on the platform AWS endpoint (Floci in local
+      setups). One bucket per Resource per environment.
+spec:
+  parameters:
+    openAPIV3Schema:
+      type: object
+      properties: {}
+
+  environmentConfigs:
+    openAPIV3Schema:
+      type: object
+      properties:
+        endpoint:
+          type: string
+          default: http://floci.internal:4566
+        region:
+          type: string
+          default: us-east-1
+
+  retainPolicy: Delete
+
+  outputs:
+    - name: bucket
+      value: ${metadata.resourceNamespace}-${metadata.resourceName}-${metadata.environmentName}
+    - name: endpoint
+      value: ${environmentConfigs.endpoint}
+    - name: region
+      value: ${environmentConfigs.region}
+    - name: accessKeyId
+      secretKeyRef:
+        name: ${metadata.name}-aws
+        key: accessKeyId
+    - name: secretAccessKey
+      secretKeyRef:
+        name: ${metadata.name}-aws
+        key: secretAccessKey
+
+  resources:
+    - id: credentials
+      template:
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: ${metadata.name}-aws
+          namespace: ${metadata.namespace}
+          labels: ${metadata.labels}
+        type: Opaque
+        stringData:
+          accessKeyId: test
+          secretAccessKey: test
+
+    # No readyWhen: OpenChoreo v1.3 reports a running Job as Healthy and stops
+    # refreshing its status, so a "succeeded" check would never turn true.
+    # Consumers retry until the Job has created the bucket/queue (seconds).
+    - id: provision
+      template:
+        apiVersion: batch/v1
+        kind: Job
+        metadata:
+          name: ${metadata.name}-provision
+          namespace: ${metadata.namespace}
+          labels: ${metadata.labels}
+        spec:
+          backoffLimit: 10
+          template:
+            spec:
+              restartPolicy: OnFailure
+              containers:
+                - name: aws
+                  image: amazon/aws-cli:2.27.0
+                  command: ["sh", "-c"]
+                  args:
+                    - >-
+                      aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null
+                      || aws s3api create-bucket --bucket "$BUCKET";
+                      aws s3api head-bucket --bucket "$BUCKET" && echo "bucket $BUCKET ready"
+                  env:
+                    - name: BUCKET
+                      value: ${metadata.resourceNamespace}-${metadata.resourceName}-${metadata.environmentName}
+                    - name: AWS_ENDPOINT_URL
+                      value: ${environmentConfigs.endpoint}
+                    - name: AWS_DEFAULT_REGION
+                      value: ${environmentConfigs.region}
+                    - name: AWS_ACCESS_KEY_ID
+                      valueFrom:
+                        secretKeyRef:
+                          name: ${metadata.name}-aws
+                          key: accessKeyId
+                    - name: AWS_SECRET_ACCESS_KEY
+                      valueFrom:
+                        secretKeyRef:
+                          name: ${metadata.name}-aws
+                          key: secretAccessKey

@@ -1,0 +1,15 @@
+{
+  "name": "doc-insights-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "API and queue worker for the doc-insights OpenChoreo sample",
+  "scripts": {
+    "api": "node api.js",
+    "worker": "node worker.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1153.0",
+    "@aws-sdk/client-sqs": "3.1153.0"
+  }
+}

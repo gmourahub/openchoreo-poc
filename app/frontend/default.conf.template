@@ -1,0 +1,16 @@
+# Rendered by the nginx image's envsubst at startup. API_HOST/API_PORT come
+# from the Workload's dependency on the api component (envBindings).
+server {
+  listen 8080;
+  root /usr/share/nginx/html;
+
+  location /api/ {
+    proxy_pass http://${API_HOST}:${API_PORT};
+    proxy_set_header Host $host;
+    client_max_body_size 300k;
+  }
+
+  location / {
+    try_files $uri $uri/ /index.html;
+  }
+}

@@ -1,0 +1,2 @@
+BACKEND_IMAGE=000000000000.dkr.ecr.us-east-1.localhost:4566/doc-insights-backend:20261108-213045
+FRONTEND_IMAGE=000000000000.dkr.ecr.us-east-1.localhost:4566/doc-insights-frontend:20261108-213045

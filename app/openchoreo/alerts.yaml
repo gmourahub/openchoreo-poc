@@ -1,0 +1,41 @@
+# Alerting for doc-insights in development: api errors open an incident and
+# trigger the SRE agent's AI root cause analysis. Applied before the components:
+# the alert trait needs its notification channel and binding config to exist
+# when the api Component is first rendered.
+apiVersion: openchoreo.dev/v1alpha1
+kind: ObservabilityAlertsNotificationChannel
+metadata:
+  name: doc-insights-development
+  namespace: default
+spec:
+  environment: development
+  type: webhook
+  webhookConfig:
+    # Placeholder receiver: incidents and RCA reports still show in the console.
+    url: http://webhook.example.invalid/doc-insights
+    headers:
+      Content-Type:
+        value: application/json
+    payloadTemplate: |
+      {"text": "[${alertSeverity}] ${alertName} on ${component} (${environment}): ${alertDescription}"}
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: ReleaseBinding
+metadata:
+  name: api-development
+  namespace: default
+spec:
+  owner:
+    projectName: doc-insights
+    componentName: api
+  environment: development
+  traitEnvironmentConfigs:
+    api-error-log-alert:
+      enabled: true
+      actions:
+        notifications:
+          channels:
+            - doc-insights-development
+        incident:
+          enabled: true
+          triggerAiRca: true

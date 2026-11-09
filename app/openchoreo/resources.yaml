@@ -1,0 +1,52 @@
+# AWS resources the project consumes, provisioned from the platform's
+# ClusterResourceTypes (../platform). Resources have no autoDeploy: deploy.sh
+# points each binding at the Resource's latest release.
+apiVersion: openchoreo.dev/v1alpha1
+kind: Resource
+metadata:
+  name: docs-bucket
+  namespace: default
+spec:
+  owner:
+    projectName: doc-insights
+  type:
+    kind: ClusterResourceType
+    name: aws-s3-bucket
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: ResourceReleaseBinding
+metadata:
+  name: docs-bucket-development
+  namespace: default
+spec:
+  owner:
+    projectName: doc-insights
+    resourceName: docs-bucket
+  environment: development
+  retainPolicy: Delete
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: Resource
+metadata:
+  name: docs-queue
+  namespace: default
+spec:
+  owner:
+    projectName: doc-insights
+  type:
+    kind: ClusterResourceType
+    name: aws-sqs-queue
+  parameters:
+    visibilityTimeoutSeconds: 30
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: ResourceReleaseBinding
+metadata:
+  name: docs-queue-development
+  namespace: default
+spec:
+  owner:
+    projectName: doc-insights
+    resourceName: docs-queue
+  environment: development
+  retainPolicy: Delete

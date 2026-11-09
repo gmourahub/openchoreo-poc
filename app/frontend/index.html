@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Doc Insights</title>
+<style>
+  :root {
+    --bg: #f6f5f1; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6a64;
+    --line: #e2e0d8; --accent: #2f5d50; --accent-ink: #ffffff;
+    --pending: #b7791f; --done: #2f7d4f; --error: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161614; --panel: #1f1f1c; --ink: #ecebe6; --muted: #9b9a93;
+      --line: #33332e; --accent: #7fb8a4; --accent-ink: #10201b;
+      --pending: #e0a542; --done: #6cc08e; --error: #f2817a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 880px; margin: 0 auto; padding: 32px 16px 64px; }
+  header h1 { margin: 0; font-size: 26px; letter-spacing: -0.01em; }
+  header p { margin: 4px 0 24px; color: var(--muted); }
+  .flow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); margin-bottom: 24px; }
+  .flow span.node { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 2px 10px; color: var(--ink); }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+  h2 { font-size: 16px; margin: 0 0 12px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  input[type=text], textarea {
+    width: 100%; font: inherit; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px;
+  }
+  textarea { min-height: 150px; resize: vertical; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+  button {
+    font: inherit; font-weight: 600; border: 0; border-radius: 6px; padding: 8px 16px;
+    background: var(--accent); color: var(--accent-ink); cursor: pointer;
+  }
+  button:disabled { opacity: .5; cursor: default; }
+  .file { font-size: 13px; color: var(--muted); }
+  #msg { font-size: 13px; color: var(--muted); }
+  #msg.error { color: var(--error); }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { border-top: 1px solid var(--line); padding: 14px 0; }
+  li:first-child { border-top: 0; padding-top: 0; }
+  .doc-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+  .doc-name { font-weight: 600; overflow-wrap: anywhere; }
+  .badge { font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .badge.pending { color: var(--pending); }
+  .badge.processed { color: var(--done); }
+  .meta { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .stats { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 8px; font-size: 13px; }
+  .stats b { font-variant-numeric: tabular-nums; }
+  .words { margin-top: 6px; font-size: 13px; color: var(--muted); }
+  .empty { color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Doc Insights</h1>
+    <p>Envie um texto; ele vai para o S3, entra na fila SQS e um worker devolve as estatísticas.</p>
+  </header>
+
+  <div class="flow" aria-label="Fluxo">
+    <span class="node">frontend</span>→<span class="node">api</span>→<span class="node">S3 + SQS</span>→<span class="node">worker</span>→<span class="node">S3</span>
+  </div>
+
+  <section>
+    <h2>Novo documento</h2>
+    <form id="form">
+      <label for="name">Nome</label>
+      <input id="name" type="text" placeholder="relatorio.txt" maxlength="120">
+      <div class="row" style="margin-top:8px">
+        <input id="file" type="file" accept=".txt,.md,.csv,.json,.log,text/*" class="file">
+      </div>
+      <label for="content" style="margin-top:12px">Conteúdo</label>
+      <textarea id="content" placeholder="Cole um texto aqui ou escolha um arquivo acima…" required></textarea>
+      <div class="row">
+        <button id="submit" type="submit">Enviar para análise</button>
+        <span id="msg" role="status"></span>
+      </div>
+    </form>
+  </section>
+
+  <section>
+    <h2>Documentos</h2>
+    <ul id="docs"><li class="empty">Carregando…</li></ul>
+  </section>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmtTime = (iso) => new Date(iso).toLocaleTimeString('pt-BR');
+  const fmtBytes = (n) => n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`;
+
+  function setMsg(text, isError = false) {
+    $('msg').textContent = text;
+    $('msg').className = isError ? 'error' : '';
+  }
+
+  $('file').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 256 * 1024) { setMsg('Arquivo maior que 256 KB.', true); e.target.value = ''; return; }
+    $('content').value = await file.text();
+    if (!$('name').value) $('name').value = file.name;
+  });
+
+  $('form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    $('submit').disabled = true;
+    setMsg('Enviando…');
+    try {
+      // Relative URL: works whether the gateway serves the app at / or under a path prefix.
+      const res = await fetch('api/docs', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: $('name').value, content: $('content').value }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      setMsg('Na fila. O worker processa em alguns segundos.');
+      $('form').reset();
+      refresh();
+    } catch (err) {
+      setMsg(`Falhou: ${err.message}`, true);
+    } finally {
+      $('submit').disabled = false;
+    }
+  });
+
+  function render(docs) {
+    if (!docs.length) {
+      $('docs').innerHTML = '<li class="empty">Nenhum documento ainda.</li>';
+      return;
+    }
+    $('docs').innerHTML = docs.map((d) => {
+      const r = d.result;
+      const stats = r ? `
+        <div class="stats">
+          <span><b>${r.words}</b> palavras</span>
+          <span><b>${r.lines}</b> linhas</span>
+          <span><b>${r.characters}</b> caracteres</span>
+          <span>~<b>${r.readingTimeSeconds}</b>s de leitura</span>
+        </div>
+        ${r.topWords.length ? `<div class="words">Mais frequentes: ${r.topWords.map((w) => `${esc(w.word)} (${w.count})`).join(', ')}</div>` : ''}
+        <div class="meta">processado às ${fmtTime(r.processedAt)} por ${esc(r.processedBy)}</div>` : '';
+      return `<li>
+        <div class="doc-head">
+          <span class="doc-name">${esc(d.name)}</span>
+          <span class="badge ${d.status}">${d.status === 'processed' ? 'processado' : 'na fila…'}</span>
+        </div>
+        <div class="meta">${fmtBytes(d.bytes)} · enviado às ${fmtTime(d.uploadedAt)}</div>
+        ${stats}
+      </li>`;
+    }).join('');
+  }
+
+  async function refresh() {
+    try {
+      const res = await fetch('api/docs');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      render(await res.json());
+    } catch (err) {
+      $('docs').innerHTML = `<li class="empty">Não foi possível carregar: ${esc(err.message)}</li>`;
+    }
+  }
+
+  refresh();
+  setInterval(refresh, 2500);
+</script>
+</body>
+</html>

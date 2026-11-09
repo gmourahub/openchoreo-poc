@@ -1,0 +1,31 @@
+apiVersion: openchoreo.dev/v1alpha1
+kind: Project
+metadata:
+  name: doc-insights
+  namespace: default
+  annotations:
+    openchoreo.dev/display-name: Doc Insights
+    openchoreo.dev/description: Envia textos para o S3, processa via fila SQS e mostra estatísticas
+  labels:
+    openchoreo.dev/name: doc-insights
+spec:
+  deploymentPipelineRef:
+    name: default
+  type:
+    kind: ClusterProjectType
+    name: default
+---
+# Owns the project's data-plane namespace in development. Staging/production
+# bindings can be added the same way when promoting.
+apiVersion: openchoreo.dev/v1alpha1
+kind: ProjectReleaseBinding
+metadata:
+  name: doc-insights-development
+  namespace: default
+  labels:
+    openchoreo.dev/project: doc-insights
+    openchoreo.dev/environment: development
+spec:
+  owner:
+    projectName: doc-insights
+  environment: development

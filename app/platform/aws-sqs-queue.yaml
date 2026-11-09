@@ -1,0 +1,108 @@
+# Platform-owned ResourceType: an SQS queue on the platform AWS endpoint
+# (Floci locally). Same shape as aws-s3-bucket: a Job creates the queue
+# idempotently; consumers get the queue name, endpoint and credentials.
+apiVersion: openchoreo.dev/v1alpha1
+kind: ClusterResourceType
+metadata:
+  name: aws-sqs-queue
+  annotations:
+    openchoreo.dev/display-name: AWS SQS Queue
+    openchoreo.dev/description: >-
+      SQS standard queue provisioned on the platform AWS endpoint (Floci in
+      local setups). One queue per Resource per environment.
+spec:
+  parameters:
+    openAPIV3Schema:
+      type: object
+      properties:
+        visibilityTimeoutSeconds:
+          type: integer
+          default: 30
+
+  environmentConfigs:
+    openAPIV3Schema:
+      type: object
+      properties:
+        endpoint:
+          type: string
+          default: http://floci.internal:4566
+        region:
+          type: string
+          default: us-east-1
+
+  retainPolicy: Delete
+
+  outputs:
+    - name: queueName
+      value: ${metadata.resourceNamespace}-${metadata.resourceName}-${metadata.environmentName}
+    - name: endpoint
+      value: ${environmentConfigs.endpoint}
+    - name: region
+      value: ${environmentConfigs.region}
+    - name: accessKeyId
+      secretKeyRef:
+        name: ${metadata.name}-aws
+        key: accessKeyId
+    - name: secretAccessKey
+      secretKeyRef:
+        name: ${metadata.name}-aws
+        key: secretAccessKey
+
+  resources:
+    - id: credentials
+      template:
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: ${metadata.name}-aws
+          namespace: ${metadata.namespace}
+          labels: ${metadata.labels}
+        type: Opaque
+        stringData:
+          accessKeyId: test
+          secretAccessKey: test
+
+    # No readyWhen: OpenChoreo v1.3 reports a running Job as Healthy and stops
+    # refreshing its status, so a "succeeded" check would never turn true.
+    # Consumers retry until the Job has created the bucket/queue (seconds).
+    - id: provision
+      template:
+        apiVersion: batch/v1
+        kind: Job
+        metadata:
+          name: ${metadata.name}-provision
+          namespace: ${metadata.namespace}
+          labels: ${metadata.labels}
+        spec:
+          backoffLimit: 10
+          template:
+            spec:
+              restartPolicy: OnFailure
+              containers:
+                - name: aws
+                  image: amazon/aws-cli:2.27.0
+                  command: ["sh", "-c"]
+                  args:
+                    - >-
+                      aws sqs create-queue --queue-name "$QUEUE"
+                      --attributes VisibilityTimeout="$VISIBILITY_TIMEOUT"
+                      && echo "queue $QUEUE ready"
+                  env:
+                    - name: QUEUE
+                      value: ${metadata.resourceNamespace}-${metadata.resourceName}-${metadata.environmentName}
+                    - name: VISIBILITY_TIMEOUT
+                      value: "${string(parameters.visibilityTimeoutSeconds)}"
+                    - name: AWS_ENDPOINT_URL
+                      value: ${environmentConfigs.endpoint}
+                    - name: AWS_DEFAULT_REGION
+                      value: ${environmentConfigs.region}
+                    - name: AWS_ACCESS_KEY_ID
+                      valueFrom:
+                        secretKeyRef:
+                          name: ${metadata.name}-aws
+                          key: accessKeyId
+                    - name: AWS_SECRET_ACCESS_KEY
+                      valueFrom:
+                        secretKeyRef:
+                          name: ${metadata.name}-aws
+                          key: secretAccessKey

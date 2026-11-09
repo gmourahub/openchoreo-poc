@@ -1,0 +1,150 @@
+# Three components. __BACKEND_IMAGE__ / __FRONTEND_IMAGE__ are filled in by
+# deploy.sh with the tags build-push.sh pushed to Floci ECR.
+
+# --- api: HTTP service, writes to S3 and publishes to SQS -------------------
+apiVersion: openchoreo.dev/v1alpha1
+kind: Component
+metadata:
+  name: api
+  namespace: default
+spec:
+  owner:
+    projectName: doc-insights
+  componentType:
+    kind: ClusterComponentType
+    name: deployment/service
+  autoDeploy: true
+  # Enabled per environment in alerts.yaml (incident + AI root cause analysis).
+  traits:
+    - kind: ClusterTrait
+      name: observability-alert-rule
+      instanceName: api-error-log-alert
+      parameters:
+        description: "api is logging errors (failed S3/SQS calls, 5xx responses)"
+        severity: critical
+        source:
+          type: log
+          query: "error"
+        condition:
+          window: 1m
+          interval: 1m
+          operator: gt
+          threshold: 2
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: Workload
+metadata:
+  name: api
+  namespace: default
+spec:
+  owner:
+    projectName: doc-insights
+    componentName: api
+  endpoints:
+    http:
+      type: HTTP
+      port: 8080
+  dependencies:
+    resources:
+      - ref: docs-bucket
+        envBindings:
+          bucket: S3_BUCKET
+          endpoint: S3_ENDPOINT
+          region: AWS_REGION
+          accessKeyId: AWS_ACCESS_KEY_ID
+          secretAccessKey: AWS_SECRET_ACCESS_KEY
+      - ref: docs-queue
+        envBindings:
+          queueName: SQS_QUEUE_NAME
+          endpoint: SQS_ENDPOINT
+  container:
+    image: __BACKEND_IMAGE__
+    command: ["node", "api.js"]
+    env:
+      - key: PORT
+        value: "8080"
+
+# --- worker: consumes the queue and writes results to S3 --------------------
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: Component
+metadata:
+  name: worker
+  namespace: default
+spec:
+  owner:
+    projectName: doc-insights
+  componentType:
+    kind: ClusterComponentType
+    name: deployment/worker
+  autoDeploy: true
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: Workload
+metadata:
+  name: worker
+  namespace: default
+spec:
+  owner:
+    projectName: doc-insights
+    componentName: worker
+  dependencies:
+    resources:
+      - ref: docs-bucket
+        envBindings:
+          bucket: S3_BUCKET
+          endpoint: S3_ENDPOINT
+          region: AWS_REGION
+          accessKeyId: AWS_ACCESS_KEY_ID
+          secretAccessKey: AWS_SECRET_ACCESS_KEY
+      - ref: docs-queue
+        envBindings:
+          queueName: SQS_QUEUE_NAME
+          endpoint: SQS_ENDPOINT
+  container:
+    image: __BACKEND_IMAGE__
+    command: ["node", "worker.js"]
+    env:
+      - key: PROCESSING_DELAY_MS
+        value: "3000"
+
+# --- frontend: static page, proxies /api to the api component ---------------
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: Component
+metadata:
+  name: frontend
+  namespace: default
+spec:
+  owner:
+    projectName: doc-insights
+  componentType:
+    kind: ClusterComponentType
+    name: deployment/web-application
+  autoDeploy: true
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: Workload
+metadata:
+  name: frontend
+  namespace: default
+spec:
+  owner:
+    projectName: doc-insights
+    componentName: frontend
+  endpoints:
+    http:
+      type: HTTP
+      port: 8080
+      visibility: [external]
+  dependencies:
+    endpoints:
+      - project: doc-insights
+        component: api
+        name: http
+        visibility: project
+        envBindings:
+          host: API_HOST
+          port: API_PORT
+  container:
+    image: __FRONTEND_IMAGE__
