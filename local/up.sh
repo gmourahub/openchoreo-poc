@@ -8,8 +8,25 @@ cd "$(dirname "$0")"
 K="kubectl --kubeconfig kubeconfig"
 
 echo '==> Floci + toolbox'
+# Other Floci stacks (cnoe-local, spike-floci) also bind 4566. If one is up,
+# oc-floci fails to start and any curl on 4566 hits the wrong Floci.
+other=$(docker ps --filter publish=4566 \
+  --format '{{.Names}} (compose project: {{.Label "com.docker.compose.project"}})' |
+  grep -v '^oc-floci ' || true)
+if [ -n "$other" ]; then
+  echo "ERROR: port 4566 is already used by: $other" >&2
+  echo "       Stop that stack first (docker compose -p <project> stop) and re-run." >&2
+  exit 1
+fi
 docker compose up -d floci toolbox
-until curl -sf -m 3 -o /dev/null http://localhost:4566/; do sleep 2; done
+# After a failed start, oc-floci can come back without the compose network,
+# which dns.sh needs to find Floci's IP. Reattach it instead of recreating.
+if ! docker inspect oc-floci --format '{{json .NetworkSettings.Networks}}' |
+  grep -q '"openchoreo-floci_default"'; then
+  echo '    reattaching oc-floci to the openchoreo-floci_default network'
+  docker network connect --alias floci openchoreo-floci_default oc-floci
+fi
+until [ "$(docker inspect -f '{{.State.Health.Status}}' oc-floci)" = healthy ]; do sleep 2; done
 
 echo '==> EKS node (k3s) and ECR registry'
 docker start floci-aws-ecr-registry floci-aws-eks-openchoreo > /dev/null
