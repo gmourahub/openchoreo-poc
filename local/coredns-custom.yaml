@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom
+  namespace: kube-system
+data:
+  openchoreo.override: |
+    rewrite stop {
+      name regex (.+\.)?openchoreo\.localhost i-e0538befb45f386f9.ec2.internal
+      answer auto
+    }
+  floci.server: |
+    floci.internal:53 {
+      hosts {
+        172.21.0.2 floci.internal
+      }
+    }
+  ollama.server: |
+    ollama.internal:53 {
+      hosts {
+        192.168.65.254 ollama.internal
+      }
+    }

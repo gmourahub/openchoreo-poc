@@ -1,0 +1,51 @@
+# In-cluster OpenAI-compatible endpoint for the AI agents: shim.py in front of
+# the host's Ollama (see shim.py for why). The ConfigMap with shim.py is
+# created by ai-agents-cluster.sh.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-gateway
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama-shim
+  namespace: ai-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: ollama-shim }
+  template:
+    metadata:
+      labels: { app: ollama-shim }
+      annotations:
+        checksum/shim: "__SHIM_CHECKSUM__"
+    spec:
+      containers:
+        - name: shim
+          image: python:3.12-alpine
+          command: ["python", "-u", "/app/shim.py"]
+          env:
+            - { name: UPSTREAM, value: "http://ollama.internal:11434" }
+          ports:
+            - { name: http, containerPort: 8080 }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { memory: 256Mi }
+          volumeMounts:
+            - { name: app, mountPath: /app }
+      volumes:
+        - name: app
+          configMap: { name: ollama-shim }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama-shim
+  namespace: ai-gateway
+spec:
+  selector: { app: ollama-shim }
+  ports:
+    - { name: http, port: 8080, targetPort: http }
