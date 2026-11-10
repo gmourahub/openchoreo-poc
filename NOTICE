@@ -1,0 +1,7 @@
+openchoreo-poc
+Copyright 2026 Guilherme Moura
+
+This product includes software developed by the OpenChoreo project
+(https://github.com/openchoreo/openchoreo), licensed under the Apache License,
+Version 2.0. In particular, local/.floci-install.sh is adapted from
+install/k3d/k3d-install.sh of OpenChoreo v1.3.3 (Copyright The OpenChoreo Authors).

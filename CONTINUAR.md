@@ -14,7 +14,7 @@ Antes do `up.sh`: Docker Desktop aberto e, para os agentes de IA, o **Ollama abe
 
 | O quê | Onde |
 |---|---|
-| Console OpenChoreo | http://openchoreo.localhost:8080 — `admin@openchoreo.dev` / `Admin@123` |
+| Console OpenChoreo | http://openchoreo.localhost:8080 (login padrão do OpenChoreo local, ver `local/README.md`) |
 | API / MCP control plane | http://api.openchoreo.localhost:8080 (`/mcp`) |
 | Observer / MCP observabilidade | http://observer.openchoreo.localhost:11080 (`/mcp`) |
 | App Doc Insights | http://http-frontend-development-default-4cc7110c.openchoreoapis.localhost:19080/ |
