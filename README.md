@@ -1,7 +1,7 @@
 # openchoreo-poc
 
 Prova de conceito do [OpenChoreo](https://github.com/openchoreo/openchoreo) v1.3.3 rodando
-100% local, num cluster EKS emulado pelo [Floci](https://github.com/floci-io/floci), com
+100% local, num cluster EKS emulado pelo Floci, com
 agentes de IA usando um modelo local (Ollama) e uma aplicação de exemplo.
 
 ## O que tem aqui
