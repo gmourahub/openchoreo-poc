@@ -15,7 +15,7 @@ Para subir o ambiente
 
 ## Acesso
 
-- Console: http://openchoreo.localhost:8080 (`admin@openchoreo.dev` / `Admin@123`)
+- Console: http://openchoreo.localhost:8080 (login padrão do OpenChoreo local, definido em `install/k3d/common/values-thunder.yaml` do upstream)
 - API: http://api.openchoreo.localhost:8080
 - Observer (logs/métricas/traces que o console usa): http://observer.openchoreo.localhost:11080
 - Apps: `http://<endpoint>-<componente>-<env>-<ns>.openchoreoapis.localhost:19080/`
