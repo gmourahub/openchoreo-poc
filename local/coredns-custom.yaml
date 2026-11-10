@@ -12,7 +12,7 @@ data:
   floci.server: |
     floci.internal:53 {
       hosts {
-        172.21.0.2 floci.internal
+        172.21.0.6 floci.internal
       }
     }
   ollama.server: |
