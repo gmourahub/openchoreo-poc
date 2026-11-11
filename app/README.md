@@ -10,10 +10,10 @@ browser ─► frontend (nginx) ─/api─► api (Node) ─► S3 uploads/<id>.
 
 | Pasta | O que é |
 |---|---|
-| `backend/` | `api.js` (HTTP) e `worker.js` (consumidor SQS), mesma imagem |
-| `frontend/` | página estática + nginx que faz proxy de `/api` para a api |
-| `platform/` | `ClusterResourceType`s `aws-s3-bucket` e `aws-sqs-queue` (time de plataforma) |
-| `openchoreo/` | Project, Resources (bucket, fila) e Components (api, worker, frontend) |
+| [`backend/`](backend/) | `api.js` (HTTP) e `worker.js` (consumidor SQS), mesma imagem |
+| [`frontend/`](frontend/) | página estática + nginx que faz proxy de `/api` para a api |
+| [`platform/`](platform/) | `ClusterResourceType`s `aws-s3-bucket` e `aws-sqs-queue` (time de plataforma) |
+| [`openchoreo/`](openchoreo/) | Project, Resources (bucket, fila) e Components (api, worker, frontend) |
 
 ## Rodar
 
