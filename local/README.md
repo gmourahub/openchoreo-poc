@@ -33,11 +33,13 @@ Para subir o ambiente (PowerShell):
 bash install.sh --with-observability   # extra ainda não testado: --with-build
 bash ai-agents.sh                      # agentes de IA (rodar de novo após install.sh)
 
-# depois de reiniciar o Docker
-docker compose up -d floci toolbox && docker start floci-aws-eks-openchoreo \
-  && docker compose --profile gateway up -d gateway && bash dns.sh
+# parar sem apagar nada (cluster, imagens e volumes ficam)
+bash down.sh
 
-# derrubar tudo
+# religar após down.sh ou reinício do Docker/PC (sobe ECR, DNS e espera o OpenChoreo)
+bash up.sh
+
+# derrubar tudo (apaga o cluster e os volumes)
 docker exec oc-toolbox aws eks delete-cluster --name openchoreo
 docker compose --profile gateway down -v
 ```
