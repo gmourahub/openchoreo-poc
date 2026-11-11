@@ -10,8 +10,11 @@ OpenChoreo v1.3.3 (control, data e observability planes) num cluster EKS `opench
 | `oc-gateway` | nginx que publica as portas LoadBalancer (8080, 19080, 11080, ...) no localhost |
 | `oc-toolbox` | aws, kubectl, helm (roda o instalador) |
 
-Para subir o ambiente
+Para subir o ambiente (PowerShell):
+
+```powershell
 & "C:\Program Files\Git\bin\bash.exe" up.sh
+```
 
 ## Acesso
 
