@@ -32,7 +32,8 @@ O diretório `src/` é um clone do upstream e não faz parte deste repositório:
 
 Os endereços e logins estão em [`URLS.md`](URLS.md).
 
-As apps (doc-insights e o exemplo Doclet) são implantadas por GitOps: o Flux sincroniza
+As apps (doc-insights e o exemplo Doclet) estão descritas para GitOps (hoje **suspenso**, ver
+[`CONTINUAR.md`](CONTINUAR.md)): com ele ligado, o Flux sincroniza
 https://github.com/gmourahub/sample-gitops, e releases e promoções são PRs lá.
 
 ## Licença e atribuição

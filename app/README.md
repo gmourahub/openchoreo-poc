@@ -19,8 +19,8 @@ browser ─► frontend (nginx) ─/api─► api (Node) ─► S3 uploads/<id>.
 
 ```bash
 bash build-push.sh   # build das imagens e push para o ECR do Floci
-bash deploy.sh       # LEGADO: o doc-insights agora é aplicado pelo Flux a partir de
-                     # github.com/gmourahub/sample-gitops (o Flux desfaz mudanças manuais)
+bash deploy.sh       # LEGADO: o doc-insights está descrito em github.com/gmourahub/sample-gitops;
+                     # com o GitOps ligado o Flux desfaz mudanças manuais (hoje está suspenso)
 ```
 
 Para publicar uma mudança de código, rode os dois de novo (cada build gera uma tag nova).

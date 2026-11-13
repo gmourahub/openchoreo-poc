@@ -23,7 +23,7 @@ Lista completa de URLs e logins: [`../URLS.md`](../URLS.md).
 - Console: http://openchoreo.localhost:8080 (login padrão do OpenChoreo local, definido em `install/k3d/common/values-thunder.yaml` do upstream)
 - API: http://api.openchoreo.localhost:8080
 - Observer (logs/métricas/traces que o console usa): http://observer.openchoreo.localhost:11080
-- Argo Workflows (builds): http://localhost:10081 · GitOps (Flux, sem UI): `kubectl get kustomization -n flux-system`
+- Argo Workflows (builds): http://localhost:10081 · GitOps (Flux, sem UI): `bash gitops.sh status` (hoje suspenso)
 - Apps: `http://<endpoint>-<componente>-<env>-<ns>.openchoreoapis.localhost:19080/`
 - kubectl: `kubectl --kubeconfig ./local/kubeconfig get pods -A`
 - Prometheus / OpenSearch não são publicados; use port-forward, por exemplo
@@ -38,6 +38,7 @@ bash ai-agents.sh                      # agentes de IA (rodar de novo após inst
 bash secrets-floci.sh                  # segredos no Secrets Manager do Floci (rodar de novo após install.sh)
 bash workflow-plane.sh                 # workflow plane (builds)
 bash flux.sh                           # Flux + GitOps (github.com/gmourahub/sample-gitops)
+bash gitops.sh suspend|resume|status   # desliga / religa o GitOps sem desinstalar o Flux
 
 # parar sem apagar nada (cluster, imagens e volumes ficam)
 bash down.sh
