@@ -1,7 +1,7 @@
 # URLs e logins
 
 Tudo roda em localhost: o container `oc-gateway` (nginx) repassa as portas 8080, 8443, 19080,
-19443, 10081, 10083 e 11080 para o nó k3s. O Floci publica 4566 (AWS) e 6500 (API do Kubernetes).
+19443, 10081 e 11080 para o nó k3s. O Floci publica 4566 (AWS) e 6500 (API do Kubernetes).
 
 ## Interfaces web
 
@@ -9,14 +9,12 @@ Tudo roda em localhost: o container `oc-gateway` (nginx) repassa as portas 8080,
 |---|---|---|
 | Console OpenChoreo (Backstage) | http://openchoreo.localhost:8080 | `admin@openchoreo.dev` / `Admin@123` |
 | Segredos do OpenChoreo (console) | http://openchoreo.localhost:8080/settings/secret | idem; ficam no Secrets Manager do Floci |
-| Argo CD (GitOps) | http://localhost:10083 | `admin` / senha abaixo |
 | Argo Workflows (builds) | http://localhost:10081 | sem login |
 
-Senha do Argo CD (gerada na instalação):
+O GitOps (Flux) não tem interface web. Estado da sincronização:
 
 ```bash
-kubectl --kubeconfig local/kubeconfig -n argocd get secret argocd-initial-admin-secret \
-  -o jsonpath='{.data.password}' | base64 -d
+kubectl --kubeconfig local/kubeconfig get gitrepository,kustomization -n flux-system
 ```
 
 ## Apps implantadas
@@ -68,6 +66,6 @@ kubectl --kubeconfig local/kubeconfig get httproute -A \
 | Repositório | Para quê |
 |---|---|
 | https://github.com/gmourahub/openchoreo-poc | este: scripts do ambiente, app doc-insights (código e imagens) |
-| https://github.com/gmourahub/sample-gitops | GitOps: o Argo CD aplica o que está na `main`; releases e promoções são PRs aqui |
+| https://github.com/gmourahub/sample-gitops | GitOps: o Flux aplica o que está na `main`; releases e promoções são PRs aqui |
 | https://github.com/openchoreo/sample-workloads | código-fonte do Doclet e de outros exemplos (builds clonam daqui) |
 | https://github.com/openchoreo/openchoreo (tag v1.3.3) | upstream, clonado em `src/` |

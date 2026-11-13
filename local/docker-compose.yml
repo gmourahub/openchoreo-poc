@@ -33,7 +33,6 @@ services:
       - "127.0.0.1:19443:19443"
       - "127.0.0.1:10081:10081" # workflow plane: Argo UI (optional)
       - "127.0.0.1:10082:10082" # workflow plane: registry (optional)
-      - "127.0.0.1:10083:10083" # GitOps: Argo CD UI (argocd.sh)
       - "127.0.0.1:11080:11080" # observability plane: observer (optional)
 
   toolbox:
