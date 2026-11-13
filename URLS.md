@@ -11,10 +11,10 @@ Tudo roda em localhost: o container `oc-gateway` (nginx) repassa as portas 8080,
 | Segredos do OpenChoreo (console) | http://openchoreo.localhost:8080/settings/secret | idem; ficam no Secrets Manager do Floci |
 | Argo Workflows (builds) | http://localhost:10081 | sem login |
 
-O GitOps (Flux) não tem interface web. Estado da sincronização:
+O GitOps (Flux) não tem interface web e hoje está suspenso. Estado e liga/desliga:
 
 ```bash
-kubectl --kubeconfig local/kubeconfig get gitrepository,kustomization -n flux-system
+bash local/gitops.sh status     # ou: suspend / resume
 ```
 
 ## Apps implantadas

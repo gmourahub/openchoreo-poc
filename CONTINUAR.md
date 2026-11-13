@@ -10,6 +10,25 @@ bash down.sh   # desliga tudo sem apagar nada (cluster, imagens, dados)
 
 Antes do `up.sh`: Docker Desktop aberto e, para os agentes de IA, o **Ollama aberto no Windows**.
 
+## Estado atual: GitOps suspenso
+
+O Flux está instalado, mas **suspenso** (`bash local/gitops.sh suspend`): o console/API voltou a ser a
+fonte da verdade e mudanças feitas no Backstage (deploy, promoção, remoção) ficam valendo. Os
+componentes do doc-insights estão com `autoDeploy: true` no cluster (no Git está `false`).
+
+```bash
+bash local/gitops.sh status    # SUSPENDED=true em tudo
+bash local/gitops.sh resume    # religa: o Flux reaplica o repo em ~1 min
+```
+
+Ao religar, o cluster volta a ser igual ao `main` do sample-gitops: **o que foi mudado pelo console
+enquanto estava suspenso é desfeito**, a menos que também tenha ido para o repo. Antes de religar,
+leve para o Git o que quiser manter (releases e bindings novos, por exemplo).
+
+Enquanto suspenso, os componentes do Doclet ainda usam o workflow `docker-gitops-release`: um build
+deles abre PR no fork, mas o merge não chega ao cluster. Para builds que deployam direto, use um
+workflow sem GitOps (ex.: `dockerfile-builder`).
+
 ## Endereços e logins
 
 Todas as URLs e logins estão em [`URLS.md`](URLS.md). As principais:
@@ -27,7 +46,7 @@ Todas as URLs e logins estão em [`URLS.md`](URLS.md). As principais:
 - **OpenChoreo v1.3.3**: control, data e observability planes (OpenSearch, Prometheus, OpenCost).
   Workflow plane (build a partir do código, Argo Workflows) instalado por `local/workflow-plane.sh`;
   as imagens vão para o ECR do Floci. Argo UI: http://localhost:10081.
-- **GitOps com Flux** (`local/flux.sh`): sincroniza https://github.com/gmourahub/sample-gitops
+- **GitOps com Flux** (`local/flux.sh`), **hoje suspenso** (ver acima): sincroniza https://github.com/gmourahub/sample-gitops
   (fork do `openchoreo/sample-gitops`). O doc-insights e o app de exemplo Doclet vivem lá; mudanças,
   releases e promoções são por PR naquele repositório. Ver `flux/FLOCI.md` no fork. Status:
   `kubectl --kubeconfig local/kubeconfig get gitrepository,kustomization -n flux-system`.
@@ -52,6 +71,7 @@ Detalhes: `local/README.md` (ambiente) e `app/README.md` (app).
 | `local/workflow-plane.sh` | (re)instalar o workflow plane (build a partir do código) |
 | `local/ecr-mirror.sh` | aponta o mirror do ECR no nó para `oc-floci` (chamado pelo `up.sh`) |
 | `local/flux.sh` | (re)instalar o Flux a partir do sample-gitops (depois ele se atualiza por PR) |
+| `local/gitops.sh suspend\|resume\|status` | desligar / religar o GitOps sem desinstalar o Flux |
 | `local/set-github-token.sh` | guardar o PAT do GitHub (`gitops-token`/`git-token`) no Floci para os builds GitOps |
 | `app/build-push.sh` | publicar imagens novas da app no ECR (depois: PR no sample-gitops com Workload/ComponentRelease) |
 | `app/deploy.sh` | **legado**: o doc-insights agora vem do sample-gitops; o Flux desfaz mudanças manuais |
@@ -84,7 +104,7 @@ Detalhes: `local/README.md` (ambiente) e `app/README.md` (app).
   Segredos criados no console (`/settings/secret`) viram `secret/<namespace>/<tipo>/<nome>` no Floci,
   gravados como `SecretBinary` (padrão do ESO para PushSecret). `install.sh` volta o store para o
   OpenBao: rode `secrets-floci.sh` depois dele.
-- **GitOps manda no doc-insights e no Doclet**: o Flux reaplica tudo a cada 5 min (e a cada merge).
+- **Com o GitOps ligado, ele manda no doc-insights e no Doclet**: o Flux reaplica tudo a cada 5 min (e a cada merge).
   Mudança feita no console ou com `kubectl` nesses apps é revertida; o caminho é PR no fork.
   Os componentes do doc-insights estão com `autoDeploy: false`. Os outros (greeter etc.) seguem
   pelo console.
@@ -108,6 +128,10 @@ Detalhes: `local/README.md` (ambiente) e `app/README.md` (app).
 - Outras stacks do Floci (`cnoe-local`, `spike-eks`) também usam a porta 4566: só uma por vez.
 
 ## Pendências / ideias para continuar
+
+- Decidir o modo de GitOps antes de religar: puro (tudo por PR) ou híbrido (development pelo
+  console, staging/produção por PR; os bindings de dev saem do Git com a anotação
+  `kustomize.toolkit.fluxcd.io/prune: disabled` antes, para o Flux não apagá-los).
 
 - FinOps agent: só teste de inicialização; ver relatórios de custo no console depois que o OpenCost
   coletar dados.
