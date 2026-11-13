@@ -19,7 +19,8 @@ browser ─► frontend (nginx) ─/api─► api (Node) ─► S3 uploads/<id>.
 
 ```bash
 bash build-push.sh   # build das imagens e push para o ECR do Floci
-bash deploy.sh       # aplica tudo no ambiente development e imprime a URL
+bash deploy.sh       # LEGADO: o doc-insights agora é aplicado pelo Argo CD a partir de
+                     # github.com/gmourahub/sample-gitops (o Argo CD desfaz mudanças manuais)
 ```
 
 Para publicar uma mudança de código, rode os dois de novo (cada build gera uma tag nova).

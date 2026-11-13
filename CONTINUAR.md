@@ -1,4 +1,4 @@
-# OpenChoreo no Floci — onde paramos (2026-11-08)
+# OpenChoreo no Floci — onde paramos (2026-11-12)
 
 ## Ligar / desligar
 
@@ -12,13 +12,14 @@ Antes do `up.sh`: Docker Desktop aberto e, para os agentes de IA, o **Ollama abe
 
 ## Endereços e logins
 
+Todas as URLs e logins estão em [`URLS.md`](URLS.md). As principais:
+
 | O quê | Onde |
 |---|---|
-| Console OpenChoreo | http://openchoreo.localhost:8080 (login padrão do OpenChoreo local, ver `local/README.md`) |
-| API / MCP control plane | http://api.openchoreo.localhost:8080 (`/mcp`) |
-| Observer / MCP observabilidade | http://observer.openchoreo.localhost:11080 (`/mcp`) |
-| App Doc Insights | http://http-frontend-development-default-4cc7110c.openchoreoapis.localhost:19080/ |
-| Floci (AWS) | http://localhost:4566 (credenciais `test`/`test`; usar `docker exec oc-toolbox aws ...`) |
+| Console OpenChoreo | http://openchoreo.localhost:8080 (`admin@openchoreo.dev` / `Admin@123`) |
+| Argo CD (GitOps) | http://localhost:10083 (`admin`; senha em `URLS.md`) |
+| Argo Workflows (builds) | http://localhost:10081 |
+| Floci (AWS) | http://localhost:4566 (`test`/`test`; `docker exec oc-toolbox aws ...`) |
 | kubectl | `kubectl --kubeconfig ./local/kubeconfig ...` |
 
 ## O que existe
@@ -27,6 +28,9 @@ Antes do `up.sh`: Docker Desktop aberto e, para os agentes de IA, o **Ollama abe
 - **OpenChoreo v1.3.3**: control, data e observability planes (OpenSearch, Prometheus, OpenCost).
   Workflow plane (build a partir do código, Argo Workflows) instalado por `local/workflow-plane.sh`;
   as imagens vão para o ECR do Floci. Argo UI: http://localhost:10081.
+- **GitOps com Argo CD** (`local/argocd.sh`): sincroniza https://github.com/gmourahub/sample-gitops
+  (fork do `openchoreo/sample-gitops`). O doc-insights e o app de exemplo Doclet vivem lá; mudanças,
+  releases e promoções são por PR naquele repositório. Ver `argocd/README.md` no fork.
 - **Agentes de IA** (`local/ai-agents.sh`): SRE/RCA, FinOps e Portal Assistant, usando o Ollama
   local com `gemma4:12b-it-qat` (registrado no Ollama como `gpt-4o-mini`, ver "Decisões").
 - **App `doc-insights`** (`app/`): frontend + api + worker, bucket S3 e fila SQS no Floci,
@@ -47,13 +51,17 @@ Detalhes: `local/README.md` (ambiente) e `app/README.md` (app).
 | `local/secrets-floci.sh` | segredos do OpenChoreo no Secrets Manager do Floci (rodar de novo após `install.sh`) |
 | `local/workflow-plane.sh` | (re)instalar o workflow plane (build a partir do código) |
 | `local/ecr-mirror.sh` | aponta o mirror do ECR no nó para `oc-floci` (chamado pelo `up.sh`) |
-| `app/build-push.sh` + `app/deploy.sh` | publicar mudanças da app |
+| `local/argocd.sh` | (re)instalar o Argo CD e a Application raiz do GitOps |
+| `local/set-github-token.sh` | guardar o PAT do GitHub (`gitops-token`/`git-token`) no Floci para os builds GitOps |
+| `app/build-push.sh` | publicar imagens novas da app no ECR (depois: PR no sample-gitops com Workload/ComponentRelease) |
+| `app/deploy.sh` | **legado**: o doc-insights agora vem do sample-gitops; o Argo CD desfaz mudanças manuais |
 | `app/chaos.sh break` / `fix` | simular falha (apaga o bucket) para testar a RCA |
 
 ## Decisões e pegadinhas (não óbvias)
 
 - **Floci só publica a porta da API do k3s (6500)**: o container `oc-gateway` (nginx) expõe 8080,
-  8443, 19080, 19443, 10081, 10082 e 11080 no localhost.
+  8443, 19080, 19443, 10081 (Argo Workflows), 10083 (Argo CD) e 11080 no localhost. A 10082 era do
+  registry do k3d e ficou sem uso (as imagens vão para o ECR do Floci).
 - **Pods acessam o Floci como `floci.internal` e o Ollama como `ollama.internal`** (CoreDNS, `dns.sh`).
   Dentro de pods o `curl` sempre manda `*.localhost` para 127.0.0.1; testar com `busybox wget`.
 - **Tokens de ServiceAccount antigos falham no Floci** (assinatura do k3s vs. chave do Floci):
@@ -76,10 +84,24 @@ Detalhes: `local/README.md` (ambiente) e `app/README.md` (app).
   Segredos criados no console (`/settings/secret`) viram `secret/<namespace>/<tipo>/<nome>` no Floci,
   gravados como `SecretBinary` (padrão do ESO para PushSecret). `install.sh` volta o store para o
   OpenBao: rode `secrets-floci.sh` depois dele.
+- **GitOps manda no doc-insights**: as Applications têm prune + self-heal. Mudança feita no console
+  ou com `kubectl` em recursos do doc-insights/Doclet é revertida em ~1 min; o caminho é PR no fork.
+  Os componentes do doc-insights estão com `autoDeploy: false`.
+- **ResourceReleaseBinding precisa de `resourceRelease` fixado** (OpenChoreo 1.3): sem isso fica
+  `ResourceReleaseNotSet`. O sample upstream não traz o campo; o fork já fixa os do Doclet.
 - **Workflow plane sem o registry twuni**: o `publish-image` faz push para
   `000000000000.dkr.ecr.us-east-1.localhost:4566` (o mesmo nome que o nó usa no pull; não precisa
   criar o repositório antes). O CA do agente vem do Secret `cluster-gateway-ca`, porque o ConfigMap
   do control plane volta a ser placeholder depois de um `helm upgrade`.
+- **Builds com `--network host`**: os pods têm MTU 1450 (flannel) e a rede própria do podman/pack
+  usa 1500; downloads nos passos `RUN` (`go mod download`, `npm ci`) morriam com `TLS handshake
+  timeout`. Os templates do fork e o `containerfile-build` local (`workflow-plane.sh`) já constroem
+  na rede do pod.
+- **Token do GitHub dos builds GitOps**: segredos `gitops-token` e `git-token` no Floci, no formato
+  `{"git-token": "<PAT>"}` (`local/set-github-token.sh`). PAT fine-grained só para o
+  `sample-gitops`, com Contents e Pull requests em read/write.
+- **Nomes de componente são únicos por namespace**: o frontend do Doclet virou `doclet-frontend`
+  porque o doc-insights já tem `frontend` em `default`.
 - Outras stacks do Floci (`cnoe-local`, `spike-eks`) também usam a porta 4566: só uma por vez.
 
 ## Pendências / ideias para continuar

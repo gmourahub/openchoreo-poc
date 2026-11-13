@@ -37,9 +37,11 @@ helm upgrade --install openchoreo-workflow-plane \
   --values /repo/install/k3d/single-cluster/values-wp.yaml
 
 echo '==> workflow templates (publish-image -> Floci ECR)'
-kubectl apply -f "$T/checkout-source.yaml" \
-  -f /repo/samples/getting-started/workflow-templates.yaml \
-  -f "$T/generate-workload-k3d.yaml"
+# podman build --network host: the build's own bridge has MTU 1500 inside pods
+# with MTU 1450 (flannel), and dependency downloads die with TLS handshake timeouts.
+kubectl apply -f "$T/checkout-source.yaml" -f "$T/generate-workload-k3d.yaml"
+sed 's#podman build -t#podman build --network host -t#' \
+  /repo/samples/getting-started/workflow-templates.yaml | kubectl apply -f -
 sed "s#host.k3d.internal:10082#$REGISTRY#" "$T/publish-image-k3d.yaml" | kubectl apply -f -
 
 echo '==> registering the workflow plane'
