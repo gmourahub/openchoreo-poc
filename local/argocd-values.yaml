@@ -1,0 +1,35 @@
+# Argo CD for the GitOps repo (github.com/gmourahub/sample-gitops). Installed by argocd.sh.
+dex:
+  enabled: false
+notifications:
+  enabled: false
+
+configs:
+  params:
+    # Plain HTTP behind the localhost gateway (oc-gateway publishes :10083).
+    server.insecure: true
+  cm:
+    # Poll the repo every minute (there is no webhook from GitHub to localhost).
+    timeout.reconciliation: 60s
+    # Health for child Applications, so the root app-of-apps waits for each
+    # sync wave (platform before projects) before starting the next one.
+    resource.customizations.health.argoproj.io_Application: |
+      hs = {}
+      hs.status = "Progressing"
+      hs.message = ""
+      if obj.status ~= nil then
+        if obj.status.health ~= nil then
+          hs.status = obj.status.health.status
+          if obj.status.health.message ~= nil then
+            hs.message = obj.status.health.message
+          end
+        end
+      end
+      return hs
+
+server:
+  service:
+    # servicelb binds these on the k3s node; nginx.conf forwards :10083 there.
+    type: LoadBalancer
+    servicePortHttp: 10083
+    servicePortHttps: 10444

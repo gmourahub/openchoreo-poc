@@ -10,6 +10,7 @@ agentes de IA usando um modelo local (Ollama) e uma aplicação de exemplo.
 |---|---|
 | [`local/`](local/README.md) | Ambiente: scripts para subir/desligar o cluster, instalar o OpenChoreo (control, data e observability planes), DNS do cluster e agentes de IA |
 | [`app/`](app/README.md) | **Doc Insights**: app de exemplo (frontend + api + worker, S3 e SQS no Floci) com manifestos do OpenChoreo, alerta de erro e script de caos para testar a análise de causa raiz |
+| [`URLS.md`](URLS.md) | **Todas as URLs e logins** (console, Argo CD, Argo Workflows, apps, Floci, APIs, repositórios) |
 | [`CONTINUAR.md`](CONTINUAR.md) | Notas de estado, decisões e pendências |
 
 ## Requisitos
@@ -29,7 +30,10 @@ bash down.sh   # desliga sem apagar nada
 O diretório `src/` é um clone do upstream e não faz parte deste repositório: o
 `local/install.sh` lê dele o script de instalação e o arquivo `VERSION`.
 
-Os logins e endereços de acesso estão em [`local/README.md`](local/README.md).
+Os endereços e logins estão em [`URLS.md`](URLS.md).
+
+As apps (doc-insights e o exemplo Doclet) são implantadas por GitOps: o Argo CD sincroniza
+https://github.com/gmourahub/sample-gitops, e releases e promoções são PRs lá.
 
 ## Licença e atribuição
 
