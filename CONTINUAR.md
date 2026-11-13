@@ -25,7 +25,8 @@ Antes do `up.sh`: Docker Desktop aberto e, para os agentes de IA, o **Ollama abe
 
 - **Cluster**: EKS `openchoreo` emulado pelo Floci (k3s 1.35, nó t2.2xlarge 8 vCPU / 12 GB).
 - **OpenChoreo v1.3.3**: control, data e observability planes (OpenSearch, Prometheus, OpenCost).
-  Workflow plane (build a partir do código) **não** instalado.
+  Workflow plane (build a partir do código, Argo Workflows) instalado por `local/workflow-plane.sh`;
+  as imagens vão para o ECR do Floci. Argo UI: http://localhost:10081.
 - **Agentes de IA** (`local/ai-agents.sh`): SRE/RCA, FinOps e Portal Assistant, usando o Ollama
   local com `gemma4:12b-it-qat` (registrado no Ollama como `gpt-4o-mini`, ver "Decisões").
 - **App `doc-insights`** (`app/`): frontend + api + worker, bucket S3 e fila SQS no Floci,
@@ -42,7 +43,10 @@ Detalhes: `local/README.md` (ambiente) e `app/README.md` (app).
 | `local/up.sh` / `local/down.sh` | ligar / desligar |
 | `local/install.sh --with-observability` | (re)instalar o OpenChoreo; depois rodar `ai-agents.sh` |
 | `local/ai-agents.sh` | (re)aplicar os agentes de IA |
-| `local/dns.sh` | DNS do cluster (`*.openchoreo.localhost`, `floci.internal`, `ollama.internal`) |
+| `local/dns.sh` | DNS do cluster (`*.openchoreo.localhost`, `floci.internal`, `ollama.internal`, `host.k3d.internal`, ECR) |
+| `local/secrets-floci.sh` | segredos do OpenChoreo no Secrets Manager do Floci (rodar de novo após `install.sh`) |
+| `local/workflow-plane.sh` | (re)instalar o workflow plane (build a partir do código) |
+| `local/ecr-mirror.sh` | aponta o mirror do ECR no nó para `oc-floci` (chamado pelo `up.sh`) |
 | `app/build-push.sh` + `app/deploy.sh` | publicar mudanças da app |
 | `app/chaos.sh break` / `fix` | simular falha (apaga o bucket) para testar a RCA |
 
@@ -62,6 +66,20 @@ Detalhes: `local/README.md` (ambiente) e `app/README.md` (app).
   inventava respostas e a RCA falhava.
 - O `qwen3.8:27b` do Ollama está **corrompido** (arquivo faltando). Apagar ou baixar de novo.
 - Incidentes **não fecham sozinhos**: o incidente de teste do `doc-insights` segue "active".
+- **O IP do Floci muda quando o Docker reinicia**, e o Floci grava o mirror do ECR no nó
+  (`/etc/rancher/k3s/registries.yaml`) com o IP fixo. `ecr-mirror.sh` troca pelo nome `oc-floci`
+  e reinicia o nó uma vez; sem isso, pull de imagem nova do ECR falha.
+- **Segredos no Secrets Manager do Floci, não no OpenBao**: o OpenBao do instalador roda em modo
+  `-dev` (só memória) e perde tudo a cada restart do nó. `secrets-floci.sh` copia as chaves dele para
+  o Floci e troca o ClusterSecretStore `default` para AWS SecretsManager (ESO com
+  `AWS_SECRETSMANAGER_ENDPOINT=http://floci.internal:4566`). O OpenBao continua instalado, sem uso.
+  Segredos criados no console (`/settings/secret`) viram `secret/<namespace>/<tipo>/<nome>` no Floci,
+  gravados como `SecretBinary` (padrão do ESO para PushSecret). `install.sh` volta o store para o
+  OpenBao: rode `secrets-floci.sh` depois dele.
+- **Workflow plane sem o registry twuni**: o `publish-image` faz push para
+  `000000000000.dkr.ecr.us-east-1.localhost:4566` (o mesmo nome que o nó usa no pull; não precisa
+  criar o repositório antes). O CA do agente vem do Secret `cluster-gateway-ca`, porque o ConfigMap
+  do control plane volta a ser placeholder depois de um `helm upgrade`.
 - Outras stacks do Floci (`cnoe-local`, `spike-eks`) também usam a porta 4566: só uma por vez.
 
 ## Pendências / ideias para continuar
@@ -69,7 +87,6 @@ Detalhes: `local/README.md` (ambiente) e `app/README.md` (app).
 - FinOps agent: só teste de inicialização; ver relatórios de custo no console depois que o OpenCost
   coletar dados.
 - Testar o Portal Assistant pela interface do console (botão do assistente / "Investigate" nos logs).
-- Workflow plane (`--with-build`): adaptar o registry (`host.k3d.internal:10082`) para o Floci.
 - O modelo 12B às vezes repete a mesma tool várias vezes; um modelo maior (ex.: `gemma4:26b-a4b-it-qat`,
   16 GB) pode melhorar, ao custo de velocidade: `OLLAMA_BASE_MODEL=... bash local/ai-agents.sh`.
 - O cliente MCP do Claude Code tem permissão de escrita no OpenChoreo (os agentes internos só leem).

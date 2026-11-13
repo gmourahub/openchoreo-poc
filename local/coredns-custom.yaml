@@ -9,10 +9,20 @@ data:
       name regex (.+\.)?openchoreo\.localhost i-e0538befb45f386f9.ec2.internal
       answer auto
     }
+    rewrite stop {
+      name exact host.k3d.internal i-e0538befb45f386f9.ec2.internal
+      answer auto
+    }
+  ecr.server: |
+    dkr.ecr.us-east-1.localhost:53 {
+      hosts {
+        172.21.0.2 000000000000.dkr.ecr.us-east-1.localhost
+      }
+    }
   floci.server: |
     floci.internal:53 {
       hosts {
-        172.21.0.6 floci.internal
+        172.21.0.2 floci.internal
       }
     }
   ollama.server: |
