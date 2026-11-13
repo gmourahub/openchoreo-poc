@@ -30,8 +30,9 @@ Para subir o ambiente (PowerShell):
 
 ```bash
 # do zero (cluster já criado): instala/atualiza
-bash install.sh --with-observability   # extra ainda não testado: --with-build
+bash install.sh --with-observability   # workflow plane: bash workflow-plane.sh (não --with-build)
 bash ai-agents.sh                      # agentes de IA (rodar de novo após install.sh)
+bash secrets-floci.sh                  # segredos no Secrets Manager do Floci (rodar de novo após install.sh)
 
 # parar sem apagar nada (cluster, imagens e volumes ficam)
 bash down.sh
@@ -91,5 +92,6 @@ específicas do k3d trocadas, mais:
 - Imagens de apps vão para o ECR do Floci (`000000000000.dkr.ecr.us-east-1.localhost:4566/...`),
   de onde o cluster puxa.
 
-`--with-build` ainda não foi testado aqui: o workflow plane espera um registry em
-`host.k3d.internal:10082`, que precisa ser adaptado.
+Workflow plane: não use `--with-build`. Rode `bash workflow-plane.sh`, que instala sem o
+registry in-cluster e manda as imagens dos builds para o ECR do Floci (ver comentários no script).
+Testado com `src/samples/from-source/services/go-docker-greeter`.

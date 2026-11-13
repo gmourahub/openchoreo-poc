@@ -32,6 +32,8 @@ echo '==> EKS node (k3s) and ECR registry'
 docker start floci-aws-ecr-registry floci-aws-eks-openchoreo > /dev/null
 until curl -sk -m 3 -o /dev/null https://localhost:6500/version; do sleep 2; done
 until $K get nodes 2> /dev/null | grep -q ' Ready'; do sleep 3; done
+# Floci's IP can change on restart; the node's ECR mirror must follow it.
+bash ecr-mirror.sh
 
 echo '==> localhost gateway (8080, 19080, 11080, ...)'
 docker compose --profile gateway up -d gateway

@@ -4,6 +4,10 @@
 #                             LoadBalancer port (host.k3d.internal's role on k3d)
 #   floci.internal         -> the Floci container (S3, SQS, ... on :4566)
 #   ollama.internal        -> the Windows host, where Ollama serves the agents' LLM (:11434)
+#   host.k3d.internal      -> the k3s node; the upstream k3d workflow templates call the
+#                             control plane (:8080) by this name
+#   000000000000.dkr.ecr.us-east-1.localhost -> Floci, so build pods push to its ECR
+#                             under the same name the node pulls with
 set -euo pipefail
 cd "$(dirname "$0")"
 export MSYS_NO_PATHCONV=1
@@ -25,6 +29,16 @@ data:
     rewrite stop {
       name regex (.+\.)?openchoreo\.localhost ${NODE_NAME}
       answer auto
+    }
+    rewrite stop {
+      name exact host.k3d.internal ${NODE_NAME}
+      answer auto
+    }
+  ecr.server: |
+    dkr.ecr.us-east-1.localhost:53 {
+      hosts {
+        ${FLOCI_IP} 000000000000.dkr.ecr.us-east-1.localhost
+      }
     }
   floci.server: |
     floci.internal:53 {

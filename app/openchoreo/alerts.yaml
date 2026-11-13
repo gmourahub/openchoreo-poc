@@ -19,6 +19,26 @@ spec:
     payloadTemplate: |
       {"text": "[${alertSeverity}] ${alertName} on ${component} (${environment}): ${alertDescription}"}
 ---
+# Staging needs its own channel: the alert trait rejects a binding without one.
+# Promoting api to staging also needs traitEnvironmentConfigs on api-staging
+# (same as api-development below, with channel doc-insights-staging).
+apiVersion: openchoreo.dev/v1alpha1
+kind: ObservabilityAlertsNotificationChannel
+metadata:
+  name: doc-insights-staging
+  namespace: default
+spec:
+  environment: staging
+  type: webhook
+  webhookConfig:
+    # Placeholder receiver: incidents and RCA reports still show in the console.
+    url: http://webhook.example.invalid/doc-insights
+    headers:
+      Content-Type:
+        value: application/json
+    payloadTemplate: |
+      {"text": "[${alertSeverity}] ${alertName} on ${component} (${environment}): ${alertDescription}"}
+---
 apiVersion: openchoreo.dev/v1alpha1
 kind: ReleaseBinding
 metadata:
