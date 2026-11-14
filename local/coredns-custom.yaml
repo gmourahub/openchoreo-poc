@@ -16,13 +16,13 @@ data:
   ecr.server: |
     dkr.ecr.us-east-1.localhost:53 {
       hosts {
-        172.21.0.2 000000000000.dkr.ecr.us-east-1.localhost
+        172.21.0.3 000000000000.dkr.ecr.us-east-1.localhost
       }
     }
   floci.server: |
     floci.internal:53 {
       hosts {
-        172.21.0.2 floci.internal
+        172.21.0.3 floci.internal
       }
     }
   ollama.server: |

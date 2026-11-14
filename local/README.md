@@ -16,6 +16,10 @@ Para subir o ambiente (PowerShell):
 & "C:\Program Files\Git\bin\bash.exe" up.sh
 ```
 
+Não use só `bash up.sh` no PowerShell: ele chama o bash do WSL, que não acessa o Docker
+Desktop (`failed to connect to the docker API at unix:///var/run/docker.sock`). Os comandos
+`bash ...` abaixo são para rodar dentro do Git Bash.
+
 ## Acesso
 
 Lista completa de URLs e logins: [`../URLS.md`](../URLS.md).
