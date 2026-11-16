@@ -1,0 +1,112 @@
+# Entrega 5: "Nova aplicação Empresa". Mounted into Backstage at
+# /app/empresa-templates/template.yaml, next to the skeleton (= golden-path/template-repo),
+# by local/golden-path.sh. Repos go to the "empresa" org in Gitea (local/gitea.sh).
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: empresa-new-app
+  title: Nova aplicação Empresa
+  description: Cria o repositório no Gitea, o projeto do time e o componente no OpenChoreo, com build e deploy automáticos em development.
+  tags: [empresa, golden-path]
+spec:
+  owner: openchoreo-users
+  type: service
+  # Forwards the signed-in user's token to the openchoreo:* actions (authz runs as the user).
+  EXPERIMENTAL_formDecorators:
+    - id: openchoreo:inject-user-token
+  parameters:
+    - title: Nova aplicação
+      required: [name, team, kind]
+      properties:
+        name:
+          title: Nome da app
+          type: string
+          description: Vira o nome do repositório e do componente. Letras minúsculas, números e hífen.
+          pattern: '^[a-z][a-z0-9-]{1,38}[a-z0-9]$'
+          ui:autofocus: true
+        team:
+          title: Time
+          type: string
+          description: Projeto do time no OpenChoreo. Criado se ainda não existir.
+          pattern: '^[a-z][a-z0-9-]{1,38}[a-z0-9]$'
+        kind:
+          title: Tipo
+          type: string
+          default: api
+          enum: [api]
+          enumNames: ['API HTTP (empresa-service)']
+  steps:
+    - id: fetch
+      name: Copiar o repositório modelo
+      action: fetch:template
+      input:
+        url: ./skeleton
+        values:
+          name: ${{ parameters.name }}
+          team: ${{ parameters.team }}
+          description: API ${{ parameters.name }} do time ${{ parameters.team }}
+
+    - id: find-project
+      name: Procurar o projeto do time
+      action: catalog:fetch
+      input:
+        entityRef: system:default/${{ parameters.team }}
+        optional: true
+
+    - id: create-project
+      name: Criar o projeto do time
+      if: ${{ not steps['find-project'].output.entity }}
+      action: openchoreo:project:create
+      input:
+        namespaceName: default
+        projectName: ${{ parameters.team }}
+        deploymentPipeline: default
+
+    - id: create-component
+      name: Criar o componente
+      action: openchoreo:component:create
+      input:
+        namespaceName: default
+        projectName: ${{ parameters.team }}
+        componentName: ${{ parameters.name }}
+        componentType: empresa-service
+        component_type_kind: ClusterComponentType
+        component_type_workload_type: deployment
+        deploymentSource: build-from-source
+        autoDeploy: true
+        workflow:
+          kind: ClusterWorkflow
+          name: empresa-dockerfile-builder
+        repo_url: http://gitea.internal:3300/empresa/${{ parameters.name }}
+        branch: main
+        # Empty = repo root. Not ".": OpenChoreo 1.3.3's push webhook compares changed
+        # files against "./" and would never trigger a build.
+        component_path: ''
+        gitSecretRef: git-credentials
+
+    # Last on purpose: the component already exists (autoBuild on, via Kyverno), so
+    # the first push fires the webhook and the first build/deploy starts by itself.
+    # Gitea speaks enough of the GitHub API for publish:github (integration in
+    # local/golden-path.sh); branch protection is the part it does not support.
+    - id: publish
+      name: Criar o repositório no Gitea
+      action: publish:github
+      input:
+        repoUrl: gitea.internal:3300?owner=empresa&repo=${{ parameters.name }}
+        description: API ${{ parameters.name }} do time ${{ parameters.team }}
+        defaultBranch: main
+        repoVisibility: private
+        protectDefaultBranch: false
+
+  output:
+    links:
+      - title: Repositório no Gitea
+        url: http://localhost:3300/empresa/${{ parameters.name }}
+      - title: Componente no portal
+        icon: kind:component
+        entityRef: component:default/${{ parameters.name }}
+    text:
+      - title: Próximo passo
+        content: |
+          O primeiro build já começou (aba **Build** do componente); quando terminar, a app sobe
+          em development e o resultado chega no Slack. Cada push na `main` faz o mesmo.

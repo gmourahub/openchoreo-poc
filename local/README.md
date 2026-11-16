@@ -43,6 +43,8 @@ bash secrets-floci.sh                  # segredos no Secrets Manager do Floci (r
 bash workflow-plane.sh                 # workflow plane (builds)
 bash flux.sh                           # Flux + GitOps (github.com/gmourahub/sample-gitops)
 bash gitops.sh suspend|resume|status   # desliga / religa o GitOps sem desinstalar o Flux
+bash branding.sh                       # logo da Empresa no console (rodar de novo após install.sh)
+bash delivery-insights.sh              # métricas DORA no console (rodar de novo após install.sh)
 
 # parar sem apagar nada (cluster, imagens e volumes ficam)
 bash down.sh

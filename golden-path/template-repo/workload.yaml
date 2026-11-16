@@ -1,0 +1,24 @@
+# Descriptor read by the build (generate-workload step): it becomes the Workload
+# of this component in OpenChoreo. Only the app's contract lives here: endpoints,
+# env vars and secrets. Replicas, CPU, memory and IAM roles are set per
+# environment in the portal, never in this repo.
+apiVersion: openchoreo.dev/v1alpha1
+metadata:
+  name: ${{ values.name }}
+endpoints:
+  - name: http
+    port: 8080            # same as the component's "port" (default 8080)
+    type: HTTP
+    # project = only apps in the same project; add "external" to expose it on the internet
+    visibility: [project]
+configurations:
+  env:
+    - name: LOG_LEVEL
+      value: info
+    # Secret example: create the secret in the portal (Settings > Secrets) and
+    # reference it here by name. The value never goes in the code.
+    # - name: DATABASE_PASSWORD
+    #   valueFrom:
+    #     secretKeyRef:
+    #       name: ${{ values.name }}-db
+    #       key: password

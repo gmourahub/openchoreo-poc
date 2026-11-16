@@ -1,0 +1,177 @@
+# Entrega 6: guardrails.
+#
+# RBAC
+#   - teams: one AuthzRoleBinding per team (rbac-team.yaml, applied by
+#     `local/golden-path.sh team <name>`): developer role scoped to the team's
+#     project, deploys only up to staging, components only of type empresa-service.
+#   - production: only the empresa-prod-approvers group (below).
+# The installer's cluster-wide `developer-binding` (group "developers") still
+# grants everything; in the real setup, teams get only their own binding.
+apiVersion: openchoreo.dev/v1alpha1
+kind: ClusterAuthzRole
+metadata:
+  name: empresa-prod-approver
+spec:
+  description: Promove, atualiza e faz rollback de releases (usado só para produção)
+  actions:
+    - namespace:view
+    - project:view
+    - component:view
+    - environment:view
+    - deploymentpipeline:view
+    - componentrelease:view
+    - releasebinding:view
+    - releasebinding:create
+    - releasebinding:update
+    - logs:view
+    - events:view
+    - metrics:view
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: ClusterAuthzRoleBinding
+metadata:
+  name: empresa-prod-approvers
+spec:
+  entitlement:
+    claim: groups
+    value: empresa-prod-approvers
+  roleMappings:
+    - roleRef:
+        kind: ClusterAuthzRole
+        name: empresa-prod-approver
+      conditions:
+        - actions: [releasebinding:create, releasebinding:update]
+          expression: resource.environment == "production"
+---
+# Git credentials for builds of the private repos the scaffolder creates in Gitea.
+# Read-only token (Floci empresa-git-read, local/gitea.sh). The checkout sends it to the
+# component's repo URL, so empresa-repo-host (below) pins that URL to our Gitea.
+apiVersion: openchoreo.dev/v1alpha1
+kind: SecretReference
+metadata:
+  name: git-credentials
+  namespace: default
+spec:
+  refreshInterval: 1h
+  template:
+    type: kubernetes.io/basic-auth
+  data:
+    - secretKey: username
+      remoteRef:
+        key: empresa-git-read
+        property: username
+    - secretKey: password
+      remoteRef:
+        key: empresa-git-read
+        property: token
+---
+# Golden-path components build on every push (Gitea webhook -> OpenChoreo autobuild).
+# The scaffolder action has no autoBuild input, so it is set here at creation.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: empresa-autobuild
+spec:
+  background: false
+  rules:
+    - name: autobuild-on
+      match:
+        any:
+          - resources:
+              kinds: [openchoreo.dev/v1alpha1/Component]
+              operations: [CREATE]
+      preconditions:
+        all:
+          - key: '{{ request.object.spec.componentType.name }}'
+            operator: Equals
+            value: deployment/empresa-service
+      mutate:
+        patchStrategicMerge:
+          spec:
+            +(autoBuild): true
+    # The portal action turns an empty path into "." and OpenChoreo 1.3.3's push webhook
+    # never matches "." (it looks for files under "./"). Empty = repo root for both.
+    - name: root-app-path
+      match:
+        any:
+          - resources:
+              kinds: [openchoreo.dev/v1alpha1/Component]
+              operations: [CREATE]
+      preconditions:
+        all:
+          - key: '{{ request.object.spec.componentType.name }}'
+            operator: Equals
+            value: deployment/empresa-service
+          - key: '{{ request.object.spec.workflow.parameters.repository.appPath || '''' }}'
+            operator: Equals
+            value: .
+      mutate:
+        patchesJson6902: |-
+          - op: replace
+            path: /spec/workflow/parameters/repository/appPath
+            value: ""
+---
+# Golden-path components clone only from our Gitea: git-credentials would otherwise go
+# to any URL a component points at. On EKS, the company's git host.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: empresa-repo-host
+spec:
+  background: false
+  rules:
+    - name: gitea-only
+      match:
+        any:
+          - resources:
+              kinds: [openchoreo.dev/v1alpha1/Component]
+              operations: [CREATE, UPDATE]
+      preconditions:
+        all:
+          - key: '{{ request.object.spec.componentType.name }}'
+            operator: Equals
+            value: deployment/empresa-service
+          # Only when the URL is set or changed: controller updates (finalizers,
+          # deletion) of older components must not be blocked.
+          - key: '{{ request.object.spec.workflow.parameters.repository.url || '''' }}'
+            operator: NotEquals
+            value: '{{ request.oldObject.spec.workflow.parameters.repository.url || '''' }}'
+      validate:
+        failureAction: Enforce
+        message: O repositório de um empresa-service precisa estar no Git da empresa (http://gitea.internal:3300/).
+        pattern:
+          spec:
+            workflow:
+              parameters:
+                repository:
+                  url: 'http://gitea.internal:3300/*'
+---
+# Kyverno, last barrier in the data plane: golden-path pods only run images from
+# the company registry (ECR; locally, Floci's ECR).
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: empresa-allowed-registries
+spec:
+  background: false
+  rules:
+    - name: company-registry-only
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              selector:
+                matchExpressions:
+                  - key: empresa.io/golden-path
+                    operator: Exists
+      validate:
+        failureAction: Enforce
+        message: Imagem fora do registry da empresa (ECR). Use o build da plataforma.
+        # Exact registry host (account + region), never a wildcard: `*.dkr.ecr.*` would
+        # accept any AWS account's ECR. On EKS use '<EMPRESA_ACCOUNT_ID>.dkr.ecr.<region>.amazonaws.com/*'.
+        pattern:
+          spec:
+            =(initContainers):
+              - image: '000000000000.dkr.ecr.us-east-1.localhost:4566/*'
+            containers:
+              - image: '000000000000.dkr.ecr.us-east-1.localhost:4566/*'

@@ -72,6 +72,8 @@ Detalhes: `local/README.md` (ambiente) e `app/README.md` (app).
 | `local/ecr-mirror.sh` | aponta o mirror do ECR no nó para `oc-floci` (chamado pelo `up.sh`) |
 | `local/flux.sh` | (re)instalar o Flux a partir do sample-gitops (depois ele se atualiza por PR) |
 | `local/gitops.sh suspend\|resume\|status` | desligar / religar o GitOps sem desinstalar o Flux |
+| `local/gitea.sh` | Gitea (git do Golden Path) em http://localhost:3300, usuário `empresa`; `bash local/gitea.sh password` mostra a senha. Rodar antes do `golden-path.sh` |
+| `local/golden-path.sh` | Golden Path Empresa (`empresa-service`, traits, workflow com Slack, template "Nova aplicação Empresa", guardrails); ver `golden-path/README.md`. Rodar de novo depois de `install.sh`/`branding.sh` |
 | `local/set-github-token.sh` | guardar o PAT do GitHub (`gitops-token`/`git-token`) no Floci para os builds GitOps |
 | `app/build-push.sh` | publicar imagens novas da app no ECR (depois: PR no sample-gitops com Workload/ComponentRelease) |
 | `app/deploy.sh` | **legado**: o doc-insights agora vem do sample-gitops; o Flux desfaz mudanças manuais |
@@ -100,10 +102,11 @@ Detalhes: `local/README.md` (ambiente) e `app/README.md` (app).
 - **Segredos no Secrets Manager do Floci, não no OpenBao**: o OpenBao do instalador roda em modo
   `-dev` (só memória) e perde tudo a cada restart do nó. `secrets-floci.sh` copia as chaves dele para
   o Floci e troca o ClusterSecretStore `default` para AWS SecretsManager (ESO com
-  `AWS_SECRETSMANAGER_ENDPOINT=http://floci.internal:4566`). O OpenBao continua instalado, sem uso.
+  `AWS_SECRETSMANAGER_ENDPOINT=http://floci.internal:4566`). O OpenBao, sem uso, foi
+  desinstalado (`helm uninstall openbao -n openbao` + namespace apagado).
   Segredos criados no console (`/settings/secret`) viram `secret/<namespace>/<tipo>/<nome>` no Floci,
-  gravados como `SecretBinary` (padrão do ESO para PushSecret). `install.sh` volta o store para o
-  OpenBao: rode `secrets-floci.sh` depois dele.
+  gravados como `SecretBinary` (padrão do ESO para PushSecret). `install.sh` reinstala o OpenBao
+  e volta o store para ele: rode `secrets-floci.sh` depois dele (e desinstale o OpenBao de novo).
 - **Com o GitOps ligado, ele manda no doc-insights e no Doclet**: o Flux reaplica tudo a cada 5 min (e a cada merge).
   Mudança feita no console ou com `kubectl` nesses apps é revertida; o caminho é PR no fork.
   Os componentes do doc-insights estão com `autoDeploy: false`. Os outros (greeter etc.) seguem

@@ -1,0 +1,297 @@
+# Entrega 3: ClusterWorkflow empresa-dockerfile-builder.
+# Copy of dockerfile-builder (OpenChoreo 1.3.3): same steps (checkout, build,
+# publish image, generate Workload) plus an Argo exit handler that posts the result
+# to Slack. The webhook comes from the secret store (key slack-webhook, property
+# url: local/set-slack-webhook.sh); without it the handler only logs and exits 0.
+apiVersion: openchoreo.dev/v1alpha1
+kind: ClusterWorkflow
+metadata:
+  name: empresa-dockerfile-builder
+  labels:
+    openchoreo.dev/workflow-type: component
+  annotations:
+    openchoreo.dev/display-name: "[Custom] Empresa Dockerfile build"
+    openchoreo.dev/description: "Custom da Empresa (Golden Path), não vem com o OpenChoreo. Build pelo Dockerfile do repositório, com aviso no Slack"
+spec:
+  workflowPlaneRef:
+    kind: ClusterWorkflowPlane
+    name: default
+  ttlAfterCompletion: 1d
+  externalRefs:
+    - id: git-secret-reference
+      apiVersion: openchoreo.dev/v1alpha1
+      kind: SecretReference
+      name: ${parameters.repository.secretRef}
+  parameters:
+    openAPIV3Schema:
+      type: object
+      required: [repository]
+      properties:
+        repository:
+          type: object
+          description: Git repository configuration
+          required: [url]
+          properties:
+            url:
+              type: string
+              description: Git repository URL
+              x-openchoreo-component-parameter-repository-url: true
+            secretRef:
+              type: string
+              default: ""
+              description: Secret reference name for Git credentials
+              x-openchoreo-component-parameter-repository-secret-ref: true
+            appPath:
+              type: string
+              default: .
+              description: Path to the application directory within the repository
+              x-openchoreo-component-parameter-repository-app-path: true
+            revision:
+              type: object
+              default: {}
+              properties:
+                branch:
+                  type: string
+                  default: main
+                  description: Git branch to checkout
+                  x-openchoreo-component-parameter-repository-branch: true
+                commit:
+                  type: string
+                  default: ""
+                  description: Git commit SHA or reference (optional, defaults to latest)
+                  x-openchoreo-component-parameter-repository-commit: true
+        docker:
+          type: object
+          default: {}
+          description: Docker build configuration
+          properties:
+            context:
+              type: string
+              default: .
+              description: Docker build context path relative to the repository root
+            filePath:
+              type: string
+              default: ./Dockerfile
+              description: Path to the Dockerfile relative to the repository root
+  resources:
+    - id: git-secret
+      includeWhen: ${has(parameters.repository.secretRef) && parameters.repository.secretRef != ""}
+      template:
+        apiVersion: external-secrets.io/v1
+        kind: ExternalSecret
+        metadata:
+          name: ${metadata.workflowRunName}-git-secret
+          namespace: ${metadata.namespace}
+        spec:
+          refreshInterval: 15s
+          secretStoreRef:
+            kind: ClusterSecretStore
+            name: ${workflowplane.secretStore}
+          target:
+            creationPolicy: Owner
+            name: ${metadata.workflowRunName}-git-secret
+            template:
+              type: ${externalRefs['git-secret-reference'].spec.template.type}
+          data: |
+            ${externalRefs['git-secret-reference'].spec.data.map(secret, {
+              "secretKey": secret.secretKey,
+              "remoteRef": {
+                "key": secret.remoteRef.key,
+                "property": has(secret.remoteRef.property) && secret.remoteRef.property != "" ? secret.remoteRef.property : oc_omit()
+              }
+            })}
+    - id: registry-push-secret
+      template:
+        apiVersion: external-secrets.io/v1
+        kind: ExternalSecret
+        metadata:
+          name: ${metadata.workflowRunName}-registry-push-secret
+          namespace: ${metadata.namespace}
+        spec:
+          refreshInterval: 15s
+          secretStoreRef:
+            kind: ClusterSecretStore
+            name: ${workflowplane.secretStore}
+          target:
+            creationPolicy: Owner
+            name: ${metadata.workflowRunName}-registry-push-secret
+            template:
+              type: kubernetes.io/dockerconfigjson
+              data:
+                .dockerconfigjson: '{{ .registrysecret | toString }}'
+          data:
+            - secretKey: registrysecret
+              remoteRef:
+                key: registry-push-secret
+                property: value
+    - id: slack-webhook
+      template:
+        apiVersion: external-secrets.io/v1
+        kind: ExternalSecret
+        metadata:
+          name: ${metadata.workflowRunName}-slack
+          namespace: ${metadata.namespace}
+        spec:
+          refreshInterval: 15s
+          secretStoreRef:
+            kind: ClusterSecretStore
+            name: ${workflowplane.secretStore}
+          target:
+            creationPolicy: Owner
+            name: ${metadata.workflowRunName}-slack
+          data:
+            - secretKey: url
+              remoteRef:
+                key: slack-webhook
+                property: url
+  runTemplate:
+    apiVersion: argoproj.io/v1alpha1
+    kind: Workflow
+    metadata:
+      name: ${metadata.workflowRunName}
+      namespace: ${metadata.namespace}
+    spec:
+      entrypoint: build-workflow
+      onExit: notify-slack
+      serviceAccountName: workflow-sa
+      arguments:
+        parameters:
+          - name: component-name
+            value: ${metadata.labels['openchoreo.dev/component']}
+          - name: project-name
+            value: ${metadata.labels['openchoreo.dev/project']}
+          - name: workflowrun-name
+            value: ${metadata.workflowRunName}
+          - name: namespace-name
+            value: ${metadata.namespaceName}
+          - name: git-repo
+            value: ${parameters.repository.url}
+          - name: branch
+            value: ${parameters.repository.revision.branch}
+          - name: commit
+            value: ${parameters.repository.revision.commit}
+          - name: app-path
+            value: ${parameters.repository.appPath}
+          - name: docker-context
+            value: ${parameters.docker.context}
+          - name: dockerfile-path
+            value: ${parameters.docker.filePath}
+          - name: build-env
+            value: '[]'
+          - name: build-args
+            value: '[]'
+          - name: image-name
+            value: ${metadata.namespaceName}-${metadata.labels['openchoreo.dev/project']}-${metadata.labels['openchoreo.dev/component']}
+          - name: image-tag
+            value: v1
+          - name: git-secret
+            value: ${metadata.workflowRunName}-git-secret
+          - name: registry-push-secret
+            value: ${metadata.workflowRunName}-registry-push-secret
+          - name: slack-secret
+            value: ${metadata.workflowRunName}-slack
+          # Portal base URL for the build link in the Slack message.
+          - name: portal-url
+            value: http://openchoreo.localhost:8080
+      templates:
+        - name: build-workflow
+          steps:
+            - - name: checkout-source
+                templateRef:
+                  clusterScope: true
+                  name: checkout-source
+                  template: checkout
+            - - name: build-image
+                templateRef:
+                  clusterScope: true
+                  name: containerfile-build
+                  template: build-image
+                arguments:
+                  parameters:
+                    - name: git-revision
+                      value: '{{steps.checkout-source.outputs.parameters.git-revision}}'
+                    - name: build-env
+                      value: '{{workflow.parameters.build-env}}'
+                    - name: build-args
+                      value: '{{workflow.parameters.build-args}}'
+            - - name: publish-image
+                templateRef:
+                  clusterScope: true
+                  name: publish-image
+                  template: publish-image
+                arguments:
+                  parameters:
+                    - name: git-revision
+                      value: '{{steps.checkout-source.outputs.parameters.git-revision}}'
+            - - name: generate-workload-cr
+                templateRef:
+                  clusterScope: true
+                  name: generate-workload
+                  template: generate-workload-cr
+                arguments:
+                  parameters:
+                    - name: image
+                      value: '{{steps.publish-image.outputs.parameters.image}}'
+                    - name: run-name
+                      value: '{{workflow.parameters.workflowrun-name}}'
+                    - name: source-commit
+                      value: '{{steps.checkout-source.outputs.parameters.commit-sha}}'
+                    - name: source-branch
+                      value: '{{steps.checkout-source.outputs.parameters.source-branch}}'
+                    - name: source-repository
+                      value: '{{workflow.parameters.git-repo}}'
+                    - name: source-authored-at
+                      value: '{{steps.checkout-source.outputs.parameters.commit-authored-at}}'
+        # Exit handler: runs on success and on failure. The commit is read from the
+        # checked-out repo on the shared workspace (step outputs are not visible here).
+        # No ${...} in this script: OpenChoreo reads that as CEL when rendering.
+        - name: notify-slack
+          container:
+            image: curlimages/curl:8.11.1
+            command: [sh, -c]
+            args:
+              - |
+                cd /mnt/vol/source 2>/dev/null && H=$(cat .git/HEAD 2>/dev/null)
+                R=$(printf '%s' "$H" | sed -n 's/^ref: //p')
+                if [ -n "$R" ]; then C=$(cat ".git/$R" 2>/dev/null || grep " $R$" .git/packed-refs | cut -d' ' -f1); else C=$H; fi
+                [ -n "$C" ] || C=$COMMIT
+                C=$(printf '%s' "$C" | cut -c1-8); [ -n "$C" ] || C='?'
+                [ "$STATUS" = Succeeded ] && ICON=':white_check_mark:' || ICON=':x:'
+                LINK="$PORTAL/catalog/$NS/component/$COMPONENT/workflows/runs/$RUN"
+                TEXT="$ICON Build *$STATUS*: \`$COMPONENT\` (projeto $PROJECT), commit \`$C\`. <$LINK|Ver build no portal>"
+                echo "$TEXT"
+                [ -n "$SLACK_WEBHOOK_URL" ] || { echo 'slack-webhook not configured, skipping'; exit 0; }
+                curl -sS --fail-with-body -m 15 -H 'Content-Type: application/json' \
+                  -d "{\"text\": \"$TEXT\"}" "$SLACK_WEBHOOK_URL" || echo 'slack notification failed'
+            env:
+              - name: SLACK_WEBHOOK_URL
+                valueFrom:
+                  secretKeyRef:
+                    name: '{{workflow.parameters.slack-secret}}'
+                    key: url
+                    optional: true
+              - name: STATUS
+                value: '{{workflow.status}}'
+              - name: COMPONENT
+                value: '{{workflow.parameters.component-name}}'
+              - name: PROJECT
+                value: '{{workflow.parameters.project-name}}'
+              - name: NS
+                value: '{{workflow.parameters.namespace-name}}'
+              - name: RUN
+                value: '{{workflow.parameters.workflowrun-name}}'
+              - name: COMMIT
+                value: '{{workflow.parameters.commit}}'
+              - name: PORTAL
+                value: '{{workflow.parameters.portal-url}}'
+            volumeMounts:
+              - name: workspace
+                mountPath: /mnt/vol
+      volumeClaimTemplates:
+        - metadata:
+            name: workspace
+          spec:
+            accessModes: [ReadWriteOnce]
+            resources:
+              requests:
+                storage: 2Gi

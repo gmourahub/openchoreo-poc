@@ -20,8 +20,8 @@ sed "s/__SHIM_CHECKSUM__/$(sha256sum /local/ollama-shim/shim.py | cut -c1-16)/" 
 kubectl -n ai-gateway rollout status deployment/ollama-shim --timeout=180s
 
 echo "==> agent secrets"
-# OAuth client secrets come from OpenBao (seeded by the installer); the LLM key
-# is a literal in the template so it survives OpenBao (dev mode) restarts.
+# OAuth client secrets come from ClusterSecretStore "default" (seeded by the
+# installer, moved to Floci by secrets-floci.sh); the LLM key is a literal in the template.
 kubectl apply -f - <<EOF
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
@@ -85,6 +85,8 @@ kubectl patch clusterobservabilityplane default --type=merge -p '{"spec":{
 
 echo "==> Portal Assistant on the control plane"
 # reasoningEffort is an OpenAI-only knob; leave it unset for Ollama.
+# RCA via the observability gateway: its NetworkPolicy only admits same-namespace
+# pods, so the sre-agent Service is unreachable from the control plane.
 helm upgrade openchoreo-control-plane "$REPO/openchoreo-control-plane" \
   --version "$VERSION" --namespace "$CP" --reuse-values \
   --set portalAssistant.enabled=true \
@@ -92,9 +94,13 @@ helm upgrade openchoreo-control-plane "$REPO/openchoreo-control-plane" \
   --set portalAssistant.llm.modelName="$LLM_MODEL" \
   --set portalAssistant.llm.baseUrl="$LLM_BASE_URL" \
   --set portalAssistant.config.reasoningEffort="" \
-  --set portalAssistant.config.rcaAgentApiUrl="http://sre-agent.${OBS}.svc.cluster.local:8080" \
+  --set portalAssistant.config.rcaAgentApiUrl="http://rca-agent.openchoreo.localhost:11080" \
   --set backstage.features.assistant.enabled=true \
   --timeout 10m
+# A control-plane upgrade resets this ConfigMap to a placeholder; refill it like the installer does.
+ca_crt=$(kubectl get secret cluster-gateway-ca -n "$CP" -o jsonpath='{.data.ca\.crt}' | base64 -d)
+kubectl create configmap cluster-gateway-ca --from-literal=ca.crt="$ca_crt" \
+  -n "$CP" --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n "$CP" rollout restart deployment/backstage
 
 echo "==> waiting for the agents"

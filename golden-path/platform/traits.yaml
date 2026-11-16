@@ -1,0 +1,124 @@
+# Entrega 2: traits allowed on empresa-service. Each one owns a single resource and
+# never creates workloads.
+
+# HPA: based on the 1.3 horizontal-pod-autoscaler ClusterTrait, with min/max/CPU as
+# parameters and each one overridable per environment.
+apiVersion: openchoreo.dev/v1alpha1
+kind: ClusterTrait
+metadata:
+  name: empresa-autoscaler
+  annotations:
+    openchoreo.dev/display-name: "[Custom] Autoscaling (HPA)"
+    openchoreo.dev/description: "Custom da Empresa (Golden Path), não vem com o OpenChoreo. Escala o número de pods pela CPU"
+spec:
+  parameters:
+    openAPIV3Schema:
+      type: object
+      properties:
+        minReplicas:
+          type: integer
+          default: 1
+          minimum: 1
+          title: Mínimo de réplicas
+        maxReplicas:
+          type: integer
+          default: 3
+          minimum: 1
+          title: Máximo de réplicas
+        targetCPU:
+          type: integer
+          default: 70
+          minimum: 10
+          maximum: 100
+          title: CPU alvo (%)
+  environmentConfigs:
+    openAPIV3Schema:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          default: true
+          description: Desligado = sem HPA neste ambiente (vale o replicas do componente).
+        minReplicas:
+          type: integer
+          minimum: 1
+          description: Sobrescreve o mínimo neste ambiente.
+        maxReplicas:
+          type: integer
+          minimum: 1
+          description: Sobrescreve o máximo neste ambiente.
+        targetCPU:
+          type: integer
+          minimum: 10
+          maximum: 100
+          description: Sobrescreve a CPU alvo neste ambiente.
+  preRenderValidations:
+    - rule: |-
+        ${environmentConfigs.?maxReplicas.orValue(parameters.maxReplicas)
+          >= environmentConfigs.?minReplicas.orValue(parameters.minReplicas)}
+      message: O máximo de réplicas precisa ser maior ou igual ao mínimo.
+    - rule: ${environmentConfigs.?maxReplicas.orValue(parameters.maxReplicas) <= 10}
+      message: O máximo de réplicas é 10 (limite da plataforma).
+  creates:
+    - includeWhen: ${environmentConfigs.enabled}
+      template:
+        apiVersion: autoscaling/v2
+        kind: HorizontalPodAutoscaler
+        metadata:
+          name: ${metadata.name}-${trait.instanceName}
+          namespace: ${metadata.namespace}
+          labels: ${metadata.labels}
+        spec:
+          scaleTargetRef:
+            apiVersion: apps/v1
+            kind: Deployment
+            name: ${metadata.name}
+          minReplicas: ${environmentConfigs.?minReplicas.orValue(parameters.minReplicas)}
+          maxReplicas: ${environmentConfigs.?maxReplicas.orValue(parameters.maxReplicas)}
+          metrics:
+            - type: Resource
+              resource:
+                name: cpu
+                target:
+                  type: Utilization
+                  averageUtilization: ${environmentConfigs.?targetCPU.orValue(parameters.targetCPU)}
+  patches:
+    # With the HPA on, it owns the replica count.
+    - target:
+        group: apps
+        version: v1
+        kind: Deployment
+        where: ${environmentConfigs.enabled}
+      operations:
+        - op: remove
+          path: /spec/replicas
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: ClusterTrait
+metadata:
+  name: empresa-pdb
+  annotations:
+    openchoreo.dev/display-name: "[Custom] PodDisruptionBudget"
+    openchoreo.dev/description: "Custom da Empresa (Golden Path), não vem com o OpenChoreo. Mantém um mínimo de pods de pé durante manutenção dos nós"
+spec:
+  parameters:
+    openAPIV3Schema:
+      type: object
+      properties:
+        minAvailable:
+          type: integer
+          default: 1
+          minimum: 0
+          title: Mínimo de pods disponíveis
+  creates:
+    - template:
+        apiVersion: policy/v1
+        kind: PodDisruptionBudget
+        metadata:
+          name: ${metadata.name}-${trait.instanceName}
+          namespace: ${metadata.namespace}
+          labels: ${metadata.labels}
+        spec:
+          minAvailable: ${parameters.minAvailable}
+          selector:
+            matchLabels: ${metadata.podSelectors}

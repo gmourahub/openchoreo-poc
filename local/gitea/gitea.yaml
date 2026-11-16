@@ -1,0 +1,76 @@
+# Gitea for the Golden Path (replaces GitHub locally). Single pod, SQLite.
+# In the cluster: http://gitea.internal:3300 (CoreDNS rewrite, dns.sh).
+# In the browser: http://localhost:3300 (oc-gateway -> servicelb on the node).
+# Same port in both, so Gitea's ROOT_URL is valid inside the cluster.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gitea
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gitea-data
+  namespace: gitea
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea
+  namespace: gitea
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {app: gitea}
+  template:
+    metadata:
+      labels: {app: gitea}
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: gitea
+          image: gitea/gitea:1.22.6-rootless
+          ports:
+            - containerPort: 3000
+          env:
+            - {name: GITEA__database__DB_TYPE, value: sqlite3}
+            - {name: GITEA__security__INSTALL_LOCK, value: "true"}
+            - {name: GITEA__server__ROOT_URL, value: "http://gitea.internal:3300/"}
+            - {name: GITEA__server__HTTP_PORT, value: "3000"}
+            - {name: GITEA__server__DISABLE_SSH, value: "true"}
+            - {name: GITEA__service__DISABLE_REGISTRATION, value: "true"}
+            # Webhooks go to openchoreo-api inside the cluster (a private address).
+            - {name: GITEA__webhook__ALLOWED_HOST_LIST, value: "*"}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/gitea, subPath: data}
+            - {name: data, mountPath: /etc/gitea, subPath: config}
+          readinessProbe:
+            httpGet: {path: /api/healthz, port: 3000}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {memory: 512Mi}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: gitea-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitea
+  namespace: gitea
+spec:
+  type: LoadBalancer
+  selector: {app: gitea}
+  ports:
+    - name: http
+      port: 3300
+      targetPort: 3000

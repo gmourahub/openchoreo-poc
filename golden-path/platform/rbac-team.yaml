@@ -1,0 +1,23 @@
+# Per-team binding (TEAM is replaced by `local/golden-path.sh team <name>`).
+# Members of IdP group TEAM: developer role inside project TEAM only; can create
+# and change empresa-service components and deploy to development and staging.
+apiVersion: openchoreo.dev/v1alpha1
+kind: AuthzRoleBinding
+metadata:
+  name: team-TEAM
+  namespace: default
+spec:
+  entitlement:
+    claim: groups
+    value: TEAM
+  roleMappings:
+    - roleRef:
+        kind: ClusterAuthzRole
+        name: developer
+      scope:
+        project: TEAM
+      conditions:
+        - actions: [releasebinding:create, releasebinding:update, releasebinding:delete]
+          expression: resource.environment in ["development", "staging"]
+        - actions: [component:create, component:update, component:delete]
+          expression: resource.componentType == "empresa-service"

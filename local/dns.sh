@@ -4,6 +4,7 @@
 #                             LoadBalancer port (host.k3d.internal's role on k3d)
 #   floci.internal         -> the Floci container (S3, SQS, ... on :4566)
 #   ollama.internal        -> the Windows host, where Ollama serves the agents' LLM (:11434)
+#   gitea.internal         -> the Gitea Service (gitea.sh), the Golden Path's git server
 #   host.k3d.internal      -> the k3s node; the upstream k3d workflow templates call the
 #                             control plane (:8080) by this name
 #   000000000000.dkr.ecr.us-east-1.localhost -> Floci, so build pods push to its ECR
@@ -32,6 +33,10 @@ data:
     }
     rewrite stop {
       name exact host.k3d.internal ${NODE_NAME}
+      answer auto
+    }
+    rewrite stop {
+      name exact gitea.internal gitea.gitea.svc.cluster.local
       answer auto
     }
   ecr.server: |

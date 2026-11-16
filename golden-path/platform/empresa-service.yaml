@@ -1,0 +1,368 @@
+# Entrega 1: ClusterComponentType empresa-service.
+# Started as a copy of deployment/service (OpenChoreo 1.3.3). Differences:
+#   - Empresa labels, runAsNonRoot, probes from parameters.port/healthPath
+#   - ServiceAccount with the IRSA role (only when environmentConfigs.irsaRoleArn is set)
+#   - Topology Aware Routing on the Service
+#   - platform limits as preRenderValidations, runAsNonRoot as postRenderValidation
+# Every value that changes per environment lives in environmentConfigs (set on the
+# ReleaseBinding through the portal); no rule mentions an environment name.
+apiVersion: openchoreo.dev/v1alpha1
+kind: ClusterComponentType
+metadata:
+  name: empresa-service
+  annotations:
+    openchoreo.dev/display-name: "[Custom] Empresa Service"
+    openchoreo.dev/description: "Custom da Empresa (Golden Path), não vem com o OpenChoreo. API HTTP padrão da Empresa (Golden Path)"
+spec:
+  workloadType: deployment
+  allowedWorkflows:
+    - kind: ClusterWorkflow
+      name: empresa-dockerfile-builder
+  allowedTraits:
+    - kind: ClusterTrait
+      name: empresa-autoscaler
+    - kind: ClusterTrait
+      name: empresa-pdb
+  parameters:
+    openAPIV3Schema:
+      type: object
+      properties:
+        port:
+          type: integer
+          default: 8080
+          title: Porta
+          description: Porta HTTP da app. Precisa ser a mesma do endpoint no workload.yaml.
+        healthPath:
+          type: string
+          default: /health
+          title: Health path
+          description: Rota usada pelas probes de readiness e liveness.
+  environmentConfigs:
+    openAPIV3Schema:
+      type: object
+      $defs:
+        ResourceQuantity:
+          type: object
+          default: {}
+          properties:
+            cpu:
+              type: string
+              default: 100m
+              description: Em millicores, ex. 250m
+            memory:
+              type: string
+              default: 128Mi
+              description: Em Mi, ex. 256Mi
+      properties:
+        replicas:
+          type: integer
+          default: 1
+          title: Réplicas
+        resources:
+          type: object
+          default: {}
+          properties:
+            requests:
+              $ref: '#/$defs/ResourceQuantity'
+            limits:
+              type: object
+              default: {}
+              properties:
+                cpu:
+                  type: string
+                  default: 500m
+                  description: Em millicores, ex. 500m
+                memory:
+                  type: string
+                  default: 256Mi
+                  description: Em Mi, ex. 512Mi
+        irsaRoleArn:
+          type: string
+          title: IAM role (IRSA)
+          description: ARN da role IAM deste ambiente. Vazio = sem acesso à AWS.
+        imagePullPolicy:
+          type: string
+          default: IfNotPresent
+          enum: [Always, IfNotPresent, Never]
+  preRenderValidations:
+    - rule: ${environmentConfigs.replicas >= 1 && environmentConfigs.replicas <= 10}
+      message: replicas precisa estar entre 1 e 10.
+    # No Kubernetes quantity library in OpenChoreo's CEL, so the platform fixes the
+    # units (m for CPU, Mi for memory) and compares the numbers.
+    - rule: |-
+        ${environmentConfigs.resources.limits.cpu.matches('^[0-9]+m$')
+          && int(environmentConfigs.resources.limits.cpu.replace('m', '')) <= 2000}
+      message: limits.cpu precisa ser em millicores (ex. 500m) e no máximo 2000m.
+    - rule: |-
+        ${environmentConfigs.resources.limits.memory.matches('^[0-9]+Mi$')
+          && int(environmentConfigs.resources.limits.memory.replace('Mi', '')) <= 4096}
+      message: limits.memory precisa ser em Mi (ex. 512Mi) e no máximo 4096Mi.
+    - rule: |-
+        ${environmentConfigs.resources.requests.cpu.matches('^[0-9]+m$')
+          && environmentConfigs.resources.requests.memory.matches('^[0-9]+Mi$')
+          && int(environmentConfigs.resources.requests.cpu.replace('m', '')) <= int(environmentConfigs.resources.limits.cpu.replace('m', ''))
+          && int(environmentConfigs.resources.requests.memory.replace('Mi', '')) <= int(environmentConfigs.resources.limits.memory.replace('Mi', ''))}
+      message: requests precisam ser em m/Mi e menores ou iguais aos limits.
+    - rule: ${workload.endpoints.exists(name, ep, ep.port == parameters.port)}
+      message: Nenhum endpoint do workload.yaml usa a porta definida no componente (parameter port).
+    # Same rules as deployment/service.
+    - rule: ${size(workload.endpoints) > 0}
+      message: O empresa-service precisa de pelo menos um endpoint no workload.yaml.
+    - rule: |-
+        ${workload.endpoints.exists(name, ep, "external" in ep.visibility)
+          ? has(gateway.ingress) && has(gateway.ingress.external)
+          : true}
+      message: Endpoints com visibilidade 'external' exigem gateway.ingress.external no Environment ou DataPlane.
+    - rule: |-
+        ${workload.endpoints.exists(name, ep, "internal" in ep.visibility)
+          ? has(gateway.ingress) && has(gateway.ingress.internal)
+          : true}
+      message: Endpoints com visibilidade 'internal' exigem gateway.ingress.internal no Environment ou DataPlane.
+  postRenderValidations:
+    - target:
+        group: apps
+        version: v1
+        kind: Deployment
+        mustMatch: true
+      rule: ${resource.spec.template.spec.?securityContext.?runAsNonRoot.orValue(false) == true}
+      message: O Deployment precisa manter securityContext.runAsNonRoot = true.
+  resources:
+    - id: deployment
+      template:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: ${metadata.name}
+          namespace: ${metadata.namespace}
+          labels: |-
+            ${oc_merge(metadata.labels, {
+              "app.kubernetes.io/name": metadata.componentName,
+              "app.kubernetes.io/part-of": metadata.projectName,
+              "app.kubernetes.io/managed-by": "openchoreo",
+              "empresa.io/team": metadata.projectName,
+              "empresa.io/environment": metadata.environmentName,
+              "empresa.io/golden-path": "empresa-service"
+            })}
+        spec:
+          replicas: ${environmentConfigs.replicas}
+          selector:
+            matchLabels: ${metadata.podSelectors}
+          template:
+            metadata:
+              labels: |-
+                ${oc_merge(metadata.podSelectors, {
+                  "app.kubernetes.io/name": metadata.componentName,
+                  "app.kubernetes.io/part-of": metadata.projectName,
+                  "empresa.io/team": metadata.projectName,
+                  "empresa.io/environment": metadata.environmentName,
+                  "empresa.io/golden-path": "empresa-service"
+                })}
+            spec:
+              serviceAccountName: |-
+                ${environmentConfigs.?irsaRoleArn.orValue("") != "" ? metadata.name : oc_omit()}
+              securityContext:
+                runAsNonRoot: true
+                seccompProfile:
+                  type: RuntimeDefault
+              containers:
+                - name: main
+                  image: ${workload.container.image}
+                  imagePullPolicy: ${environmentConfigs.imagePullPolicy}
+                  command: |
+                    ${has(workload.container.command) ? workload.container.command : oc_omit()}
+                  args: |
+                    ${has(workload.container.args) ? workload.container.args : oc_omit()}
+                  env: ${dependencies.toContainerEnvs()}
+                  envFrom: ${configurations.toContainerEnvFrom()}
+                  securityContext:
+                    allowPrivilegeEscalation: false
+                  readinessProbe:
+                    httpGet:
+                      path: ${parameters.healthPath}
+                      port: ${parameters.port}
+                    periodSeconds: 10
+                  livenessProbe:
+                    httpGet:
+                      path: ${parameters.healthPath}
+                      port: ${parameters.port}
+                    initialDelaySeconds: 10
+                    periodSeconds: 20
+                  resources:
+                    requests:
+                      cpu: ${environmentConfigs.resources.requests.cpu}
+                      memory: ${environmentConfigs.resources.requests.memory}
+                    limits:
+                      cpu: ${environmentConfigs.resources.limits.cpu}
+                      memory: ${environmentConfigs.resources.limits.memory}
+                  volumeMounts: ${configurations.toContainerVolumeMounts() + dependencies.toContainerVolumeMounts()}
+              volumes: ${configurations.toVolumes() + dependencies.toVolumes()}
+    - id: serviceaccount
+      includeWhen: ${environmentConfigs.?irsaRoleArn.orValue("") != ""}
+      template:
+        apiVersion: v1
+        kind: ServiceAccount
+        metadata:
+          name: ${metadata.name}
+          namespace: ${metadata.namespace}
+          labels: ${metadata.labels}
+          annotations:
+            eks.amazonaws.com/role-arn: ${environmentConfigs.irsaRoleArn}
+    - id: service
+      includeWhen: ${size(workload.endpoints) > 0}
+      template:
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: ${metadata.componentName}
+          namespace: ${metadata.namespace}
+          labels: ${metadata.labels}
+          annotations:
+            # Topology Aware Routing: keep traffic in the caller's zone when possible.
+            service.kubernetes.io/topology-mode: Auto
+        spec:
+          type: ClusterIP
+          selector: ${metadata.podSelectors}
+          ports: ${workload.toServicePorts()}
+    # HTTPRoutes, ConfigMaps and ExternalSecrets: unchanged from deployment/service.
+    - id: httproute-external
+      forEach: ${workload.endpoints.transformMap(name, ep, "external" in ep.visibility && ep.type in ["HTTP", "GraphQL", "Websocket"], ep)}
+      var: endpoint
+      template:
+        apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          name: ${oc_generate_name(metadata.componentName, endpoint.key)}
+          namespace: ${metadata.namespace}
+          labels: '${oc_merge(metadata.labels, {"openchoreo.dev/endpoint-name": endpoint.key, "openchoreo.dev/endpoint-visibility": "external"})}'
+        spec:
+          hostnames: |
+            ${[gateway.ingress.external.?http, gateway.ingress.external.?https]
+              .filter(g, g.hasValue()).map(g, g.value().host).distinct()
+              .map(h, metadata.environmentName + "-" + metadata.componentNamespace + "." + h)}
+          parentRefs:
+            - name: ${gateway.ingress.external.name}
+              namespace: ${gateway.ingress.external.namespace}
+          rules:
+            - matches:
+                - path:
+                    type: PathPrefix
+                    value: /${metadata.componentName}-${endpoint.key}
+              filters:
+                - type: URLRewrite
+                  urlRewrite:
+                    path:
+                      type: ReplacePrefixMatch
+                      replacePrefixMatch: ${endpoint.value.?basePath.orValue("/")}
+                - type: CORS
+                  cors:
+                    allowCredentials: false
+                    allowHeaders: ['*']
+                    allowMethods: [GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD]
+                    allowOrigins: ['*']
+                    exposeHeaders: ['*']
+              backendRefs:
+                - name: ${metadata.componentName}
+                  port: ${endpoint.value.port}
+    - id: httproute-internal
+      forEach: ${workload.endpoints.transformMap(name, ep, "internal" in ep.visibility && ep.type in ["HTTP", "GraphQL", "Websocket"], ep)}
+      var: endpoint
+      template:
+        apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          name: ${oc_generate_name(metadata.componentName, endpoint.key, "internal")}
+          namespace: ${metadata.namespace}
+          labels: '${oc_merge(metadata.labels, {"openchoreo.dev/endpoint-name": endpoint.key, "openchoreo.dev/endpoint-visibility": "internal"})}'
+        spec:
+          hostnames: |
+            ${[gateway.ingress.internal.?http, gateway.ingress.internal.?https]
+              .filter(g, g.hasValue()).map(g, g.value().host).distinct()
+              .map(h, metadata.environmentName + "-" + metadata.componentNamespace + "." + h)}
+          parentRefs:
+            - name: ${gateway.ingress.internal.name}
+              namespace: ${gateway.ingress.internal.namespace}
+          rules:
+            - matches:
+                - path:
+                    type: PathPrefix
+                    value: /${metadata.componentName}-${endpoint.key}
+              filters:
+                - type: URLRewrite
+                  urlRewrite:
+                    path:
+                      type: ReplacePrefixMatch
+                      replacePrefixMatch: ${endpoint.value.?basePath.orValue("/")}
+              backendRefs:
+                - name: ${metadata.componentName}
+                  port: ${endpoint.value.port}
+    - id: env-config
+      forEach: ${configurations.toConfigEnvsByContainer()}
+      var: envConfig
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: ${envConfig.resourceName}
+          namespace: ${metadata.namespace}
+        data: |
+          ${envConfig.envs.transformMapEntry(index, env, {env.name: env.value})}
+    - id: file-config
+      forEach: ${configurations.toConfigFileList()}
+      var: config
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: ${config.resourceName}
+          namespace: ${metadata.namespace}
+        data:
+          ${config.name}: |
+            ${config.value}
+    - id: secret-env-external
+      forEach: ${configurations.toSecretEnvsByContainer()}
+      var: secretEnv
+      template:
+        apiVersion: external-secrets.io/v1
+        kind: ExternalSecret
+        metadata:
+          name: ${secretEnv.resourceName}
+          namespace: ${metadata.namespace}
+        spec:
+          refreshInterval: 15s
+          secretStoreRef:
+            kind: ClusterSecretStore
+            name: ${dataplane.secretStore}
+          target:
+            creationPolicy: Owner
+            name: ${secretEnv.resourceName}
+          data: |
+            ${secretEnv.envs.map(secret, {
+              "secretKey": secret.name,
+              "remoteRef": {
+                "key": secret.remoteRef.key,
+                ?"property": secret.remoteRef.?property
+              }
+            })}
+    - id: secret-file-external
+      forEach: ${configurations.toSecretFileList()}
+      var: file
+      template:
+        apiVersion: external-secrets.io/v1
+        kind: ExternalSecret
+        metadata:
+          name: ${file.resourceName}
+          namespace: ${metadata.namespace}
+        spec:
+          refreshInterval: 15s
+          secretStoreRef:
+            kind: ClusterSecretStore
+            name: ${dataplane.secretStore}
+          target:
+            creationPolicy: Owner
+            name: ${file.resourceName}
+          data:
+            - secretKey: ${file.name}
+              remoteRef:
+                key: ${file.remoteRef.key}
+                property: |
+                  ${has(file.remoteRef.property) ? file.remoteRef.property : oc_omit()}
