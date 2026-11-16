@@ -48,7 +48,8 @@ spec:
             - {name: GITEA__server__DISABLE_SSH, value: "true"}
             - {name: GITEA__service__DISABLE_REGISTRATION, value: "true"}
             # Webhooks go to openchoreo-api inside the cluster (a private address).
-            - {name: GITEA__webhook__ALLOWED_HOST_LIST, value: "*"}
+            # Only that host: "*" would let anyone with a webhook-capable token make Gitea call any address.
+            - {name: GITEA__webhook__ALLOWED_HOST_LIST, value: openchoreo-api.openchoreo-control-plane.svc.cluster.local}
           volumeMounts:
             - {name: data, mountPath: /var/lib/gitea, subPath: data}
             - {name: data, mountPath: /etc/gitea, subPath: config}

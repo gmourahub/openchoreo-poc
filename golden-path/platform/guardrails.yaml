@@ -111,8 +111,10 @@ spec:
             path: /spec/workflow/parameters/repository/appPath
             value: ""
 ---
-# Golden-path components clone only from our Gitea: git-credentials would otherwise go
-# to any URL a component points at. On EKS, the company's git host.
+# git-credentials goes only to our Gitea: the checkout sends it to whatever URL the
+# build points at. Keyed on the credential, not the component type, so a Component of
+# any type or a WorkflowRun created directly can't send it elsewhere. Both kinds keep
+# the repository under spec.workflow.parameters. On EKS, the company's git host.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
@@ -124,21 +126,16 @@ spec:
       match:
         any:
           - resources:
-              kinds: [openchoreo.dev/v1alpha1/Component]
+              kinds: [openchoreo.dev/v1alpha1/Component, openchoreo.dev/v1alpha1/WorkflowRun]
               operations: [CREATE, UPDATE]
       preconditions:
         all:
-          - key: '{{ request.object.spec.componentType.name }}'
+          - key: '{{ request.object.spec.workflow.parameters.repository.secretRef || '''' }}'
             operator: Equals
-            value: deployment/empresa-service
-          # Only when the URL is set or changed: controller updates (finalizers,
-          # deletion) of older components must not be blocked.
-          - key: '{{ request.object.spec.workflow.parameters.repository.url || '''' }}'
-            operator: NotEquals
-            value: '{{ request.oldObject.spec.workflow.parameters.repository.url || '''' }}'
+            value: git-credentials
       validate:
         failureAction: Enforce
-        message: O repositório de um empresa-service precisa estar no Git da empresa (http://gitea.internal:3300/).
+        message: Quem usa git-credentials precisa clonar do Git da empresa (http://gitea.internal:3300/).
         pattern:
           spec:
             workflow:

@@ -85,6 +85,13 @@ spec:
           default: IfNotPresent
           enum: [Always, IfNotPresent, Never]
   preRenderValidations:
+    # Teams set environmentConfigs on their ReleaseBindings, so the role is pinned to
+    # <project>-<environment>-*: a team can't pick another team's or environment's role.
+    - rule: >-
+        ${environmentConfigs.?irsaRoleArn.orValue("") == "" ||
+        environmentConfigs.irsaRoleArn.matches("^arn:aws:iam::[0-9]{12}:role/" +
+        metadata.projectName + "-" + metadata.environmentName + "-[A-Za-z0-9+=,.@_-]+$")}
+      message: irsaRoleArn precisa ser uma role arn:aws:iam::<conta>:role/<projeto>-<ambiente>-<nome>.
     - rule: ${environmentConfigs.replicas >= 1 && environmentConfigs.replicas <= 10}
       message: replicas precisa estar entre 1 e 10.
     # No Kubernetes quantity library in OpenChoreo's CEL, so the platform fixes the

@@ -1,2 +1,2 @@
-FROM huihui_ai/gemma-4-abliterated:12b-qat
+FROM gemma4:12b-it-qat
 PARAMETER num_ctx 131072
